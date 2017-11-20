@@ -3,7 +3,6 @@ import './App.css';
 import {BrowserRouter, Route, Switch, Link} from 'react-router-dom';
 
 import rtc from './service/RTCmulticonnection';
-import 'rtcmulticonnection-v3/dist/RTCMultiConnection.min.js';
 
 import CreateMonitor from './components/CreateMonitor';
 import ViewMonitor from './components/ViewMonitor';
