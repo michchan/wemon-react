@@ -2,16 +2,10 @@ import React, {Component} from 'react';
 import './App.css';
 import {BrowserRouter, Route, Switch, Link} from 'react-router-dom';
 
-import rtc from './service/RTCmulticonnection';
-
-import CreateMonitor from './components/CreateMonitor';
-import ViewMonitor from './components/ViewMonitor';
+import Monitor from './components/Monitor';
 import Home from './components/Home';
 
 class App extends Component {
-  componentWillMount() {
-    rtc.initService();
-  }
 
   render() {
     return (
@@ -27,8 +21,7 @@ class App extends Component {
 
           <Switch>
             <Route exact path='/' component={Home}/>
-            <Route path='/create-monitor' component={CreateMonitor}/>
-            <Route path='/view-monitor' component={ViewMonitor}/>
+            <Route path='/monitor/:role/:id' component={Monitor}/>
           </Switch>
 
         </div>

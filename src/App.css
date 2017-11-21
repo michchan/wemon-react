@@ -1,3 +1,23 @@
+.container-full {
+  margin: 0 auto;
+  padding: 0;
+  width: 100%;
+}
+
+.no-gutters {
+  margin-right: 0;
+  margin-left: 0;
+}
+.no-gutters > .col, .no-gutters > [class*="col-"] {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+body {
+  background-color: #DEDEDE;
+  font-family: "Helvetica-Neue", Helvetica, Verdana;
+}
+
 .App {
   text-align: center;
 }
@@ -31,6 +51,46 @@
 
 .App-intro {
   font-size: large;
+}
+
+
+.Home-input-container {
+  width: 100vw;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+}
+
+.Home-grid-button {
+  color: #fff;
+  height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 2.5em;
+}
+
+.Home-grid-button:hover {
+  text-decoration: none;
+  color: #fff;
+  opacity: 0.9;
+}
+
+.Home-grid-button-left {
+  background-color: #85929E;
+}
+
+.Home-grid-button-right {
+  background-color: #2E4053;
+}
+
+.Monitor-container {
+  background-color: #4D5656;
+  color: #fff;
 }
 
 @keyframes App-logo-spin {
