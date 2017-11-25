@@ -42,8 +42,10 @@ class Monitor extends Component {
                                     ref="video" 
                                     src={ this.props.src || '' }
                                     controls
+                                    className='Monitor__video'
                                     muted
-                                    autoPlay/>
+                                    autoPlay
+                              />
                         </div>
                   </div>
             );

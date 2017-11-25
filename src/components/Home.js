@@ -4,6 +4,20 @@ import { Tab, Tabs, TabList, TabPanel } from 'react-tabs';
 import _ from 'lodash';
 import { Modal, ModalHeader, ModalBody, ModalFooter, Button } from 'elemental';
 import { Form, FormControl, FormGroup, ControlLabel, HelpBlock, ToggleButtonGroup, ToggleButton } from 'react-bootstrap';
+import {
+    ChasingDots,
+    Circle,
+    CubeGrid,
+    DoubleBounce,
+    FadingCircle,
+    FoldingCube,
+    Pulse,
+    RotatingPlane,
+    ThreeBounce,
+    WanderingCubes,
+    Wave
+} from 'better-react-spinkit';
+
 import Monitor from './Monitor';
 
 import { ComponentLogging } from '../service/log';
@@ -81,14 +95,15 @@ class Home extends Component {
     }
 
     _renderTabs() {
-        return this.state.tabs.map((tab, index) => {
-            const isBroadcast = tab.sessionType === 'broadcast';
+        return this.state.tabs.map((tabConfig, index) => {
+            const isBroadcast = tabConfig.sessionType === 'broadcast';
 
             return(
                 <Tab key={index}>
                     { isBroadcast && <span><i className="fa fa-video-camera" aria-hidden="true" color='red'></i>&nbsp;&nbsp;</span> }
-                    { tab.title }
-                    <button onClick={ ()=>this._onRemoveSessionClick(index, tab) } className='Home-tabs__cross-button'> &#x2715; </button>
+                    { tabConfig.title }
+                    { tabConfig.loading && <span className='tab__loading'><FadingCircle size={25} color="grey"/></span>}
+                    <button onClick={ ()=>this._onRemoveSessionClick(index, tabConfig) } className='Home-tabs__cross-button'> &#x2715; </button>
                 </Tab>
             );
         });
@@ -98,6 +113,12 @@ class Home extends Component {
         return this.state.tabs.map((tabConfig, index) => (
             <TabPanel key={index}>
                 <div>
+                    {
+                        tabConfig.loading && 
+                        <div className='tab-panel__loading'>
+                            <FadingCircle size={60}  color="white"/>
+                        </div>
+                    }
                     <Monitor { ...tabConfig }/>
                 </div>
             </TabPanel>

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "better-react-spinkit": "2.0.2",
     "bootstrap": "3.3.7",
     "elemental": "0.6.1",
     "lodash": "4.17.4",
@@ -15,6 +16,7 @@
     "react-router-transition": "1.1.2",
     "react-rtab": "0.2.3",
     "react-scripts": "1.0.17",
+    "react-spinkit": "3.0.0",
     "react-tabs": "2.1.1",
     "react-transition-group": "2.2.1",
     "redux": "3.7.2",
