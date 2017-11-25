@@ -45,15 +45,26 @@ class Home extends Component {
             isModalOpen: false,
             form: this._getInitialFormState(),
             createSessionType: 'broadcast', // default is broadcast
+            disabledButton: false,
         };
 
         this.isRemovingTab = false; // it needs immediate blocking so not using state
     }
 
     componentWillMount() { 
+        window.addEventListener('dblclick', this._closeModal.bind(this));
     }
 
     componentDidMount() {
+        this._autoFocusButtons(this.state);
+    }
+
+    componentWillUnmount() {
+        window.removeEventListener('dblclick', this._closeModal.bind(this));
+    }
+
+    componentWillUpdate(nextProps, nextState) {
+        this._autoFocusButtons(nextState);
     }
 
     render() {
@@ -132,12 +143,15 @@ class Home extends Component {
                     Click "Create Monitor Session" to create or view monitor.
                 </div>
                 <div className='row no-gutters'>
-                    <Button 
-                        type="primary"
+                    <button 
+                        ref={'createSessionButton'}
+                        type="button" 
+                        autoFocus
+                        className="btn btn-primary btn-lg"
                         onClick={ this._onCreateSessionClick.bind(this) }
                     >
                         Create Monitor Session
-                    </Button>
+                    </button>
                 </div>
             </div>
         )
@@ -222,6 +236,12 @@ class Home extends Component {
                 }
             </Form>
         );
+    }
+
+    _autoFocusButtons(state, e) {
+        if(state.tabs.length === 0) {
+            return this.refs.createSessionButton && this.refs.createSessionButton.focus();
+        };
     }
 
     _getInitialFormState() {
@@ -365,7 +385,10 @@ class Home extends Component {
 
         let closedIndex = _.findIndex(this.state.tabs, { id });
 
-        this.setState({ tabIndex: closedIndex }, ()=> setTimeout(()=>alert(receiverId + ': session is closed by: '+e.userid), 0) );
+        this.setState({ tabIndex: closedIndex }, ()=> setTimeout(()=>{
+            let tab = _.find(this.state.tabs, { id });
+            tab && alert(receiverId + ': session is closed by: '+e.userid);
+        }, 0));
     }
 
     _updateTabConfig(id, config) {
@@ -380,7 +403,7 @@ class Home extends Component {
     }
 
     _closeModal() {
-        this.setState({ 
+        this.state.isModalOpen && this.setState({ 
             isModalOpen: !this.state.isModalOpen,
             form: this._getInitialFormState(), //clear form state
         });

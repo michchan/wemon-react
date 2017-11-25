@@ -12,11 +12,15 @@ class Monitor extends Component {
 
             this.rtc = props.rtcSession;
             this.connection = this.rtc.connection;
+
+            this.state = {
+                  muted: props.sessionType === 'broadcast'? true : false,
+            }
       }
 
       componentDidMount() {   
             c.log('mounted');
-            c.log('connection, ', this.connection);
+            c.log('Connection of this session, ', this.connection);
       }
 
       componentWillReceiveProps(nextProps) {
@@ -43,12 +47,25 @@ class Monitor extends Component {
                                     src={ this.props.src || '' }
                                     controls
                                     className='Monitor__video'
-                                    muted
+                                    muted={this.state.muted}
                                     autoPlay
+                                    onVolumeChange={this._onVolumeChange.bind(this)}
                               />
                         </div>
                   </div>
             );
+      }
+      
+      _onVolumeChange() {
+            if( 
+                  (!this.state.muted && this.refs.video.volume === 0 ) ||
+                  (this.state.muted && this.refs.video.volume !== 0 ) 
+            ) {
+                  this.rtc.userEventHandlers.muteOrUnmuteStream( this.refs.video.volume === 0 );
+                  
+                  if(this.refs.video.volume === 0) this.setState({ muted: true });
+                  else this.setState({ muted: false });            
+            }
       }
 
       _onProps(nextProps) {
@@ -63,7 +80,7 @@ class Monitor extends Component {
                   this.refs.video.play();
             };
             if(nextProps.streamType && nextProps.streamType === 'local') {
-                  this.refs.video.muted = true;
+                  this.setState({ muted: true });
             }
       }
 }

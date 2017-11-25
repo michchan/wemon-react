@@ -57,6 +57,10 @@ body {
   font-size: large;
 }
 
+.btn {
+  cursor: pointer;
+}
+
 
 /* tabs */
 .react-tabs {
@@ -141,13 +145,13 @@ body {
   position: absolute;
   right: 40px;
   padding: 0 0 0 5px;
-  background: #fff; 
+  background: inherit; 
 }
 .tab-panel__loading {
   position: absolute;
   width: 100%;
   height: 80%;
-  padding: 25% 0 0 5px;
+  padding: 20vh 0 0 5px;
   background: rgba(0,0,0,0.7); 
   display: flex;
   align-items: top;

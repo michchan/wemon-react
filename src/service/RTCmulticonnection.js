@@ -34,6 +34,7 @@ export default class RTCMultiConnectionSession {
         this.userEventHandlers = _getUserEventHandlers(this.connection, this.refs, this.buffer, onStreamCallback);
         
         _setConnectionParams(this.connection);
+        _setConnectionConstraint(this.connection);
         _setSocketConnection(this.connection, connectedSocketCallback);
         _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, onStreamCallback, onSessionClosedCallback);
     
@@ -53,6 +54,24 @@ const _setConnectionParams = (connection) => {
     connection.autoCloseEntireSession = true;
     connection.socketURL = 'https://rtcmulticonnection.herokuapp.com:443/';
     connection.socketMessageEvent = 'wemon-msg-event';
+    connection.beforeAddingStream = (stream, peer) => stream;
+};
+
+const _setConnectionConstraint = (connection) => {
+    let defaultConstraints = {
+        width: 720,
+        height: 480,
+        echoCancellation: false, // disabling audio processing
+        // googAutoGainControl: true,
+        // googNoiseSuppression: true,
+        // googHighpassFilter: true,
+        // googTypingNoiseDetection: true,
+        minFrameRate: 15,
+        maxFrameRate: 30,
+        aspectRatio: 1.2,
+    };
+    
+    connection.mediaConstraints = filterConstraintsByBrowser(connection, defaultConstraints);
 };
 
 const _setSocketConnection = (connection, connectedSocketCallback) => {
@@ -183,8 +202,12 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
                         peer.getLocalStreams().forEach(function (localStream) {
                             peer.removeStream(localStream);
                         });
+                        log(event.stream);
+                        log(peer);
                         event.stream.getTracks().forEach(function (track) {
-                            peer.addTrack(track, event.stream);
+                            if(typeof peer.addTrack === 'function') peer.addTrack(track, event.stream);
+                            else logErr('peer.addTrack is not a function');
+                            // else if(typeof peer.addStream === 'function') peer.addStream(event.stream);
                         });
                         connection.dontAttachStream = true;
                         connection.renegotiate(p);
@@ -320,6 +343,134 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
         };
 
         connection = null;
-    }
+    },
+
+    applyConstraints: (constraints) => {
+        let validConstraints = filterConstraintsByBrowser(connection, constraints);
+        log('Apply Constraints, ', validConstraints);
+
+        if(connection.DetectRTC.browser.name === 'Chrome') {
+            updateConstraintsInChrome(connection, validConstraints, onStreamCallback);
+            return;
+        }
+        // for Firefox
+        connection.applyConstraints(validConstraints);
+    },
+
+    muteOrUnmuteStream: (mute = true) => {
+        let streamEvent = connection.streamEvents.selectFirst();
+        if(!streamEvent) return logErr('muteOrUnmuteStream: streamEvent undefined');
+
+        log(mute? 'Mute stream ': 'Unmute stream', streamEvent);
+        mute && streamEvent.stream.mute('both');
+        !mute && streamEvent.stream.unmute('both');
+    },
 
 });
+
+const updateConstraintsInChrome = (connection, constraints, onStreamCallback) => {
+    connection.getAllParticipants().forEach(function(uid) {
+        var user = connection.peers[uid];
+    
+        user.peer.getLocalStreams().forEach(function(localStream) {
+            user.peer.removeStream(localStream);
+        });
+    });
+    
+    var oldStream = connection.attachStreams[0];
+
+    connection.mediaConstraints = constraints; // update constraints
+
+    navigator.webkitGetUserMedia(connection.mediaConstraints, function(newStream) {
+
+        connection.attachStreams = [newStream];
+        
+        // var video = document.createElement('video');
+        // video.src = URL.createObjectURL(newStream);
+        // connection.videosContainer.appendChild(video);
+        // video.play();
+        log(newStream);
+        onStreamCallback({ stream: newStream, userid: connection.userid });
+
+        setTimeout(function() {
+            // video.play();
+            oldStream.stop();
+            // setTimeout(function() {
+            //     video.id = connection.userid;
+            //     document.getElementById('btn-change-resolutions').disabled = false;
+            // }, 2000);
+        }, 5000);
+        connection.renegotiate();
+
+    }, function(error) {
+        alert(JSON.stringify(error, null, '\t'));
+    });
+};
+
+
+const filterConstraintsByBrowser = (connection, constraints) => {
+    const isChrome = connection.DetectRTC.browser.name === 'Chrome';
+    const isFirefox = connection.DetectRTC.browser.name === 'Firefox';
+    let filteredConstraints = isChrome? 
+        { video: { mandatory: {}, optional: [] }, audio: { mandatory: {}, optional: [] } } : 
+        { video: {}, audio: {} };
+    let supports = navigator.mediaDevices.getSupportedConstraints();
+    log('MediaConstraints support: ', supports);
+
+    /* Video Constraints */
+    if (supports.width && constraints.width) {
+        if(isFirefox) filteredConstraints.video.width = constraints.width;
+        else {
+            filteredConstraints.video.mandatory.minWidth = constraints.width;
+            filteredConstraints.video.mandatory.maxWidth = constraints.width;
+        };
+    }
+    if (supports.height && constraints.height) {
+        if(isFirefox) filteredConstraints.video.height = constraints.height;
+        else {
+            filteredConstraints.video.mandatory.minHeight = constraints.height;
+            filteredConstraints.video.mandatory.maxHeight = constraints.height;
+        };
+    }
+    if(supports.aspectRatio && constraints.aspectRatio) {
+        if(isFirefox) filteredConstraints.video.aspectRatio = constraints.aspectRatio;
+        else filteredConstraints.video.mandatory.minAspectRatio = constraints.aspectRatio;
+    }
+    if(supports.frameRate && constraints.frameRate) {
+        if(isFirefox) {
+            filteredConstraints.video.frameRate = {
+                min: constraints.minFrameRate,
+                max: constraints.maxFrameRate, 
+            };
+        } else {
+            filteredConstraints.video.mandatory.minFrameRate = constraints.minFrameRate;
+            filteredConstraints.video.mandatory.maxFrameRate = constraints.maxFrameRate;
+        };
+    }
+    if(supports.deviceId && constraints.deviceId) {
+        if(isFirefox) filteredConstraints.video.deviceId = constraints.deviceId;
+        else {
+            !filteredConstraints.video.optional[0] && filteredConstraints.video.optional.push({});
+            filteredConstraints.video.optional[0].sourceId = constraints.deviceId;
+        }
+    }
+    if(supports.facingMode && constraints.facingMode) {
+        if(isFirefox) filteredConstraints.video.facingMode = constraints.facingMode;
+        else {
+            !filteredConstraints.video.optional[0] && filteredConstraints.video.optional.push({});
+            filteredConstraints.video.optional[0].facingMode = constraints.facingMode;
+        }
+    }
+
+    /* Audio Constraints */
+    if(supports.echoCancellation && _.isBoolean(constraints.echoCancellation) ) {
+        if(isFirefox) filteredConstraints.audio.echoCancellation = constraints.echoCancellation;
+        else filteredConstraints.audio.mandatory.echoCancellation = constraints.echoCancellation;
+    }
+
+    if( _.isEmpty(filteredConstraints.video.mandatory) ) filteredConstraints.video = true;
+    if( _.isEmpty(filteredConstraints.audio.mandatory) ) filteredConstraints.audio = true;
+
+    log('Filtered Constraints by browser', filteredConstraints);
+    return filteredConstraints;
+};
