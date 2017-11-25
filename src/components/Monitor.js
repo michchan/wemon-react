@@ -16,27 +16,11 @@ class Monitor extends Component {
 
       componentDidMount() {   
             c.log('mounted');
-            // c.log('role: '+this.props.match.params.role);
-            // c.log('id: '+this.props.match.params.id);
-            c.log('video ref: ', this.refs.video);
-
-            // set video ref for RTC to bind stream src
-            this.rtc.refs.video = this.refs.video;
-
             c.log('connection, ', this.connection);
-            _.forEach(this.connection, (val, key)=>{
-                  if(typeof val === 'function')
-                        c.log(key);
-            });
       }
 
       componentWillReceiveProps(nextProps) {
-            if(nextProps.rtcSession !== this.props.rtcSession) this.rtc = nextProps.rtcSession;
-            if(nextProps.socketIsReady !== this.props.socketIsReady) {
-                  c.log('socketIsReady changed, ', nextProps.socketIsReady);
-                  // Join or Open a monitor
-                  this.rtc.userEventHandlers.openOrJoin(this.props.id);
-            };
+            this._onProps({ ...nextProps });
       }
 
       componentWillUnmount() {
@@ -50,6 +34,7 @@ class Monitor extends Component {
                               <h1>{ this.props.title }</h1>
                               <h3>{ `Type: ${this.props.sessionType}` }</h3>
                               <h5>{ `User ID: ${this.connection.userid}` }</h5>
+                              <h5>{ `Broadcaster ID: ${this.props.broadcasterId}` }</h5>
                               <h3>{ `Monitor ID: ${this.props.id}` }</h3>
                         </div>
                         <div>
@@ -62,6 +47,22 @@ class Monitor extends Component {
                         </div>
                   </div>
             );
+      }
+
+      _onProps(nextProps) {
+            if(nextProps.rtcSession !== this.props.rtcSession) this.rtc = nextProps.rtcSession;
+            if(nextProps.socketIsReady !== this.props.socketIsReady) {
+                  c.log('socketIsReady changed, ', nextProps.socketIsReady);
+                  // Join or Open a monitor
+                  this.rtc.userEventHandlers.openOrJoin(this.props.id);
+            };
+            if(nextProps.srcObject && nextProps.srcObject !== this.props.srcObject) {
+                  this.refs.video.srcObject = nextProps.srcObject;
+                  this.refs.video.play();
+            };
+            if(nextProps.streamType && nextProps.streamType === 'local') {
+                  this.refs.video.muted = true;
+            }
       }
 }
 

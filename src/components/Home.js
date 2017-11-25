@@ -17,13 +17,6 @@ const formProps = {
     sessionId: 'sessionId',
 };
 
-const id1 = `${parseInt( Math.random() * 100000000000)}`;
-const id2 = `${parseInt( Math.random() * 100000000000)}`;
-
-const ids = [id1, id2, id1, id2];
-const types = ['broadcast', 'broadcast', 'view', 'view'];
-const titles = ['tab 1', 'tab 2', 'tab 3', 'tab 4'];
-
 class Home extends Component {
     constructor(props) {
         super(props);
@@ -68,9 +61,9 @@ class Home extends Component {
     }
 
     _renderTabsBody() {
-        c.log('Tabs: ', this.state.tabs);
-        c.log('CurrentTabIndex: ', this.state.tabIndex);
-        c.log('CurrentTab: ', this.state.tabs[this.state.tabIndex]);
+        // c.log('Tabs: ', this.state.tabs);
+        // c.log('CurrentTabIndex: ', this.state.tabIndex);
+        // c.log('CurrentTab: ', this.state.tabs[this.state.tabIndex]);
 
         return (
             <Tabs 
@@ -93,7 +86,7 @@ class Home extends Component {
 
             return(
                 <Tab key={index}>
-                    { isBroadcast && <span><i className="fa fa-video-camera" ariaHidden="true" color='red'></i>&nbsp;&nbsp;</span> }
+                    { isBroadcast && <span><i className="fa fa-video-camera" aria-hidden="true" color='red'></i>&nbsp;&nbsp;</span> }
                     { tab.title }
                     <button onClick={ ()=>this._onRemoveSessionClick(index, tab) } className='Home-tabs__cross-button'> &#x2715; </button>
                 </Tab>
@@ -304,9 +297,8 @@ class Home extends Component {
         const thisIndex = tabs.length;
 
         let rtcSession = new RTCService( 
-            `${parseInt( Math.random() * 100000000000)}`,
-            ()=>this._updateTabConfig(thisIndex, { socketIsReady: true }),
-            (src)=>this._updateTabConfig(thisIndex, { src, loading: false })
+            ()=> this._updateTabConfig(thisIndex, { socketIsReady: true }),
+            (e)=> this._onStream(e, thisIndex),
         );
 
         let id;
@@ -320,21 +312,37 @@ class Home extends Component {
         this._createTab({
             title,
             id,
+            broadcasterId: null, // receive from stream
             sessionType: createSessionType,
             rtcSession,
             socketIsReady: false,
             src: null,
+            srcObject: null,
             loading: true,
         });
 
         this._closeModal();
     }
 
-    _updateTabConfig(index, config) {
-        c.log('update tab config, ', config);
+    _onStream(e, thisIndex) {
+        const { stream, userid, type } = e;
 
-        let tabs = this.state.tabs.map(tabConfig => {
-            return { ...tabConfig, ...config };
+        this._updateTabConfig(thisIndex, { 
+            srcObject: stream,
+            src: URL.createObjectURL(stream),
+            broadcasterId: userid,
+            streamType: type,
+            loading: false 
+        });
+    }   
+
+    _updateTabConfig(index, config) {
+        c.log('update tab config, index: '+index, config);
+
+        let tabs = this.state.tabs.map((tabConfig, i) => {
+            if(i === index)
+                return { ...tabConfig, ...config };
+            return tabConfig;
         });
         this.setState({ tabs });
     }
@@ -348,7 +356,7 @@ class Home extends Component {
 
     _onSelectTab(tabIndex) {
         if( !this.isRemovingTab ) {
-            c.log('onSelect Session: '+tabIndex);
+            // c.log('onSelect Session: '+tabIndex);
             this.setState({ tabIndex });
         };
     }

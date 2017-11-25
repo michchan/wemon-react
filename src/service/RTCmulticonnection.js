@@ -14,10 +14,11 @@ var RTCMultiConnection = window.RTCMultiConnection; // the class
 
 export default class RTCMultiConnectionSession {
 
-    constructor(sessionId, connectedSocketCallback=()=>{}, onStreamCallback=()=>{}) {
+    constructor(connectedSocketCallback=()=>{}, onStreamCallback=()=>{}, sessionId) {
         if(!RTCMultiConnection) return log('RTCMultiConnection undefined');
 
-        this.connection = new RTCMultiConnection(sessionId);
+        if(sessionId) this.connection = new RTCMultiConnection(sessionId);
+        else this.connection = new RTCMultiConnection();
         
         this.refs = {
             video: null,
@@ -148,29 +149,20 @@ const _socketHandlers = (connection, socket) => ({
 const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
 
     onStream: (event) => {
-        log('onStream', event, refs.video, event.stream);
+        log(`######### ${connection.userid} onStream #########`, event, refs.video, event.stream);
 
         if (connection.isInitiator && event.type !== 'local') {
             return;
         };
 
-        if(!refs.video) return logErr('onStream: No video Ref');
+        if(!refs.video) logErr('onStream: No video Ref');
 
         connection.isUpperUserLeft = false;
 
         connection.isUpperUserLeft = false;
-        // refs.video.srcObject = event.stream;
-        const videoSrc = URL.createObjectURL(event.stream)
-        refs.video.src = videoSrc;
-        onStreamCallback(videoSrc); // callback for setState src
 
-        refs.video.play();
-
-        refs.video.userid = event.userid;
-
-        if (event.type === 'local') {
-            refs.video.muted = true;
-        }
+        /* Callback for setting video src */
+        onStreamCallback(event); // callback for setState src, set video srcObject or src here
 
         if (connection.isInitiator == false && event.type === 'remote') {
             // he is merely relaying the media
@@ -264,22 +256,8 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback)
     },
 
     onExtraDataUpdated: function(e) {
-        log(connection.userid + ' received extra data updated', e.userid, e.extra);
-        
-        const { closed, type, peers } = e.extra;
-        let isToMe = false;
+        log(connection.userid + ' received extra data updated from: '+ e.userid, e.extra);
 
-        if(peers)
-            peers.map(peerId => isToMe = peerId === connection.userid);
-
-        if(closed && isToMe) {
-            if(type === 'broadcast') {
-                onStreamCallback('');
-            };
-            if(type === 'view') {
-                onStreamCallback('');
-            };
-        };
     },
 
     onleave: (e) => {
@@ -287,7 +265,8 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback)
     },
 
     onclose: (e) => {
-        log(connection.userid + ' received sb close');
+        log(connection.userid + ' received Broadcaster closed the monitor');
+        alert('Broadcaster closed the monitor');
     },
 });
 
@@ -327,34 +306,13 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
     },
     
     leave: (type) => {
-        // let peers = [];
-        // log(connection.userid + ' all participants: ', connection.getAllParticipants());
-        // connection.getAllParticipants().forEach(function(remoteUserId) {
-        //     // var user = connection.peers[remoteUserId];
-        //     // log('leaving user\'s extra', remoteUserId, user.extra);
-        //     // peers.push(remoteUserId);
-        //     connection.peers[remoteUserId].peer.close();
-        //     // log(connection.peers[remoteUserId].peer);
-        // });
-
-        // connection.extra = {
-        //     type,
-        //     peers,
-        //     closed: true,
-        // };
-        // connection.updateExtraData();
-        if(type === 'broadcast') {
-            connection.close();
-        };
-        if(type === 'view') {
+        if(connection.isInitiator) {
+            connection.closeEntireSession();
+        } else {
             connection.leave();
-        }
+        };
 
-        // connection.attachStreams.forEach(function(stream) {
-        //     stream.stop();
-        // });
-
-        // connection = null;
+        connection = null;
         
         log('Removed session and disconnect with all peers on leave');
     }
