@@ -7,6 +7,9 @@
 .no-gutters {
   margin-right: 0;
   margin-left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .no-gutters > .col, .no-gutters > [class*="col-"] {
   padding-right: 0;
@@ -47,11 +50,93 @@ body {
 .App-title {
   margin-top: 10px;
   font-size: 1.5em;
+  color: #DEDEDE;
 }
 
 .App-intro {
   font-size: large;
 }
+
+
+/* tabs */
+.react-tabs {
+  width: 100%;
+}
+.react-tabs__tab-list {
+  border-bottom: 1px solid #aaa;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+}
+
+.react-tabs__tab {
+  display: inline-block;
+  border: 1px solid transparent;
+  border-bottom: none;
+  bottom: -1px;
+  position: relative;
+  list-style: none;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.react-tabs__tab--selected {
+  background: #fff;
+  border-color: #aaa;
+  color: black;
+  border-radius: 5px 5px 0 0;
+}
+
+.react-tabs__tab--disabled {
+  color: GrayText;
+  cursor: default;
+}
+
+.react-tabs__tab:focus {
+  box-shadow: 0 0 5px hsl(208, 99%, 50%);
+  border-color: hsl(208, 99%, 50%);
+  outline: none;
+}
+
+.react-tabs__tab:focus:after {
+  content: "";
+  position: absolute;
+  height: 5px;
+  left: -4px;
+  right: -4px;
+  bottom: -5px;
+  background: #fff;
+}
+
+.react-tabs__tab-panel {
+  display: none;
+}
+
+.react-tabs__tab-panel--selected {
+  display: block;
+  background: #fff;
+  padding: 10px 0 10px 0;
+}
+
+.Home-tabs__plus-button {
+  border: 0;
+  border-radius: 2px;
+  background: #aeaeae;
+  color: #222;
+  margin-left: 5px;
+}
+
+.Home-tabs__cross-button {
+  background: rgba(0,0,0,0);
+  margin-left: 5px;
+  border: 0;
+}
+
+.fa-video-camera {
+  color: rgb(199, 65, 65);
+}
+/* end tabs */
+
 
 
 .Home-input-container {
@@ -88,10 +173,22 @@ body {
   background-color: #2E4053;
 }
 
+.Home-empty-info-container {
+  height: 35vh;
+  font-size: 2em;
+  font-weight: 700;
+  color: #aeaeae;
+}
+
+
 .Monitor-container {
   background-color: #4D5656;
   color: #fff;
+  padding: 5px 5px 20px 5px;
 }
+
+
+
 
 @keyframes App-logo-spin {
   from { transform: rotate(0deg); }

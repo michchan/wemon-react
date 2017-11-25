@@ -1,4 +1,5 @@
 import io from 'socket.io-client';
+import _ from 'lodash';
 
 import { 
     logRTCMultiConnectionEvent as log, 
@@ -9,45 +10,58 @@ import {
 
 window.io = io; // RTCMultiConnection need to access the io class
 
-var RTCMultiConnection; // the class
-var connection; // the connection object for this client
-var enableRecordings = false;
-var videoRef;
-var broadcastIdRef;
-var allRecordedBlobs = [];
-var componentEventHandlers = {};
+var RTCMultiConnection = window.RTCMultiConnection; // the class
 
-export const initService = (callback = ()=>{}) => {
-    RTCMultiConnection = window.RTCMultiConnection;
-    if(!RTCMultiConnection) return log('RTCMultiConnection undefined');
+export default class RTCMultiConnectionSession {
 
-    connection = new RTCMultiConnection();
+    constructor(sessionId, connectedSocketCallback=()=>{}, onStreamCallback=()=>{}) {
+        if(!RTCMultiConnection) return log('RTCMultiConnection undefined');
 
-    _setConnectionParams(connection);
-    _setSocketConnection(connection);
-    _setConnectionEventHandler(connection);
+        this.connection = new RTCMultiConnection(sessionId);
+        
+        this.refs = {
+            video: null,
+            broadcastIdInput: null,            
+        };
 
-    log('Constructed connection object with default params set');
-    log('Connection object: ', connection);
+        this.buffer = {
+            allRecordedBlobs: [],
+        };
 
-    callback(); // finish init callback
-};
+        this.enableRecordings = false;
+
+        this.userEventHandlers = _getUserEventHandlers(this.connection, this.refs, this.buffer, onStreamCallback);
+        
+        _setConnectionParams(this.connection);
+        _setSocketConnection(this.connection, connectedSocketCallback);
+        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, onStreamCallback);
+    
+        log('Constructed connection object with default params set');
+        log('Connection object: with session id: '+sessionId, this.connection);
+    };
+
+} // class RTCMultiConnectionSession
+
+
+// ==================== functions ======================
 
 const _setConnectionParams = (connection) => {
     connection.enableScalableBroadcast = true;
     connection.maxRelayLimitPerUser = 1;
+    connection.direction = "one-to-many";
     connection.autoCloseEntireSession = true;
     connection.socketURL = 'https://rtcmulticonnection.herokuapp.com:443/';
     connection.socketMessageEvent = 'wemon-msg-event';
 };
 
-const _setSocketConnection = (connection) => {
+const _setSocketConnection = (connection, connectedSocketCallback) => {
     connection.connectSocket((socket) => {
         if(!socket) return logErr('Cannot connect socket.');
         
-        logSocket('Socket connected');
+        logSocket('Socket connected',  socket);
+        connectedSocketCallback(); // so that user can join or open
 
-        let handlers = _socketHandlers(socket);
+        let handlers = _socketHandlers(connection, socket);
 
         socket.on('logs', handlers.logs);
         socket.on('join-broadcaster', handlers.joinBroadcaster);
@@ -57,29 +71,19 @@ const _setSocketConnection = (connection) => {
     });
 };
 
-const _setConnectionEventHandler = (connection) => {
-    let handlers = _connectionEventHandlers(connection);
+const _setConnectionEventHandler = (connection, userEventHandlers, refs, buffer, onStreamCallback = ()=>{}) => {
+    let handlers = _getConnectionEventHandlers(connection, refs, buffer, onStreamCallback);
 
     connection.onstream = handlers.onStream;
     connection.onstreamended = handlers.onStreamEnded;
     connection.onleave = handlers.onLeave;
-
-    componentEventHandlers = _componentEventHandlers(connection);
+    connection.onEntireSessionClosed = handlers.onEntireSessionClosed;
+    connection.onExtraDataUpdated = handlers.onExtraDataUpdated;
+    connection.onclose = handlers.onclose;
+    connection.onleave = handlers.onleave;
 };
 
-export const setRefs = (refs) => {
-    if(refs.broadcastIdRef) broadcastIdRef = refs.broadcastIdRef;
-    if(refs.videoRef) videoRef = refs.videoRef;
-};
-
-export const getRefs = () => ({
-    broadcastIdRef,
-    videoRef
-})
-
-export const getComponentEventHandlers = ()=>( componentEventHandlers );
-
-const _socketHandlers = (socket) => ({
+const _socketHandlers = (connection, socket) => ({
 
     logs: (log) => {
         logSocket('logs: ', log);
@@ -141,25 +145,31 @@ const _socketHandlers = (socket) => ({
 
 }); // end _socketHandlers
 
-const _connectionEventHandlers = (connection) => ({
+const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
 
     onStream: (event) => {
+        log('onStream', event, refs.video, event.stream);
+
         if (connection.isInitiator && event.type !== 'local') {
             return;
         };
 
-        if(!videoRef) return logErr('onStream: No video Ref');
+        if(!refs.video) return logErr('onStream: No video Ref');
 
         connection.isUpperUserLeft = false;
 
         connection.isUpperUserLeft = false;
-        videoRef.srcObject = event.stream;
-        videoRef.play();
+        // refs.video.srcObject = event.stream;
+        const videoSrc = URL.createObjectURL(event.stream)
+        refs.video.src = videoSrc;
+        onStreamCallback(videoSrc); // callback for setState src
 
-        videoRef.userid = event.userid;
+        refs.video.play();
+
+        refs.video.userid = event.userid;
 
         if (event.type === 'local') {
-            videoRef.muted = true;
+            refs.video.muted = true;
         }
 
         if (connection.isInitiator == false && event.type === 'remote') {
@@ -171,13 +181,13 @@ const _connectionEventHandlers = (connection) => ({
                 OfferToReceiveVideo: false
             };
 
-            var socket = connection.getSocket();
+            let socket = connection.getSocket();
             socket.emit('can-relay-broadcast');
 
             if (connection.DetectRTC.browser.name === 'Chrome') {
                 connection.getAllParticipants().forEach(function (p) {
                     if (p + '' != event.userid + '') {
-                        var peer = connection.peers[p].peer;
+                        let peer = connection.peers[p].peer;
                         peer.getLocalStreams().forEach(function (localStream) {
                             peer.removeStream(localStream);
                         });
@@ -212,32 +222,34 @@ const _connectionEventHandlers = (connection) => ({
         };
     }, // end onStream
 
-    onStreamEnded: ()=>{},
+    onStreamEnded: (e)=>{
+        log(connection.userid + ' receive onStreamEnded ');
+    },
 
     onLeave: (event) => {
-        if (event.userid !== videoRef.userid) return;
+        if (event.userid !== refs.video.userid) return;
         
         let socket = connection.getSocket();
         socket.emit('can-not-relay-broadcast');
 
         connection.isUpperUserLeft = true;
 
-        if(!videoRef) return logErr('onLeave: No video Ref');
+        if(!refs.video) return logErr('onLeave: No video Ref');
 
-        if (allRecordedBlobs.length) {
+        if (buffer.allRecordedBlobs.length) {
             // playing lats recorded blob
-            var lastBlob = allRecordedBlobs[allRecordedBlobs.length - 1];
-            videoRef.src = URL.createObjectURL(lastBlob);
-            videoRef.play();
-            allRecordedBlobs = [];
+            let lastBlob = buffer.allRecordedBlobs[buffer.allRecordedBlobs.length - 1];
+            refs.video.src = URL.createObjectURL(lastBlob);
+            refs.video.play();
+            buffer.allRecordedBlobs = [];
         } else if (connection.currentRecorder) {
-            var recorder = connection.currentRecorder;
+            let recorder = connection.currentRecorder;
             connection.currentRecorder = null;
             recorder.stopRecording(function () {
                 if (!connection.isUpperUserLeft) return;
 
-                videoRef.src = URL.createObjectURL(recorder.getBlob());
-                videoRef.play();
+                refs.video.src = URL.createObjectURL(recorder.getBlob());
+                refs.video.play();
             });
         }
 
@@ -246,16 +258,47 @@ const _connectionEventHandlers = (connection) => ({
             connection.currentRecorder = null;
         }
     }, // end onLeave
+
+    onEntireSessionClosed: (e) => {
+        log(connection.userid + ' received entire session closed');
+    },
+
+    onExtraDataUpdated: function(e) {
+        log(connection.userid + ' received extra data updated', e.userid, e.extra);
+        
+        const { closed, type, peers } = e.extra;
+        let isToMe = false;
+
+        if(peers)
+            peers.map(peerId => isToMe = peerId === connection.userid);
+
+        if(closed && isToMe) {
+            if(type === 'broadcast') {
+                onStreamCallback('');
+            };
+            if(type === 'view') {
+                onStreamCallback('');
+            };
+        };
+    },
+
+    onleave: (e) => {
+        log(connection.userid + ' received sb leave');
+    },
+
+    onclose: (e) => {
+        log(connection.userid + ' received sb close');
+    },
 });
 
-const _componentEventHandlers = (connection) => ({
+const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
 
-    onOpenOrJoin: (broadcastId) => {
-        if( !broadcastIdRef ) return logErr('onOpenOrJoin: no broadcastIdRef');
+    openOrJoin: (broadcastId) => {
+        log('openOrJoin broadcast');
 
         if (broadcastId.replace(/^\s+|\s+$/g, '').length <= 0) {
             alert('Please enter broadcast-id');
-            broadcastIdRef.focus();
+            if( refs.broadcastIdInput ) refs.broadcastIdInput.focus();
             return;
         }
 
@@ -281,14 +324,39 @@ const _componentEventHandlers = (connection) => ({
                 typeOfStreams: connection.session
             });
         });
-    },  
+    },
+    
+    leave: (type) => {
+        // let peers = [];
+        // log(connection.userid + ' all participants: ', connection.getAllParticipants());
+        // connection.getAllParticipants().forEach(function(remoteUserId) {
+        //     // var user = connection.peers[remoteUserId];
+        //     // log('leaving user\'s extra', remoteUserId, user.extra);
+        //     // peers.push(remoteUserId);
+        //     connection.peers[remoteUserId].peer.close();
+        //     // log(connection.peers[remoteUserId].peer);
+        // });
+
+        // connection.extra = {
+        //     type,
+        //     peers,
+        //     closed: true,
+        // };
+        // connection.updateExtraData();
+        if(type === 'broadcast') {
+            connection.close();
+        };
+        if(type === 'view') {
+            connection.leave();
+        }
+
+        // connection.attachStreams.forEach(function(stream) {
+        //     stream.stop();
+        // });
+
+        // connection = null;
+        
+        log('Removed session and disconnect with all peers on leave');
+    }
 
 });
-
-/* EXPORT */
-export default {
-    initService,  
-    setRefs,
-    getRefs,
-    getComponentEventHandlers,
-};
