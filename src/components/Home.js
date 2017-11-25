@@ -295,23 +295,26 @@ class Home extends Component {
 
         let tabs = [ ...this.state.tabs ];
         const thisIndex = tabs.length;
+        let sessionId = generateRandomString();
 
         let rtcSession = new RTCService( 
-            ()=> this._updateTabConfig(thisIndex, { socketIsReady: true }),
-            (e)=> this._onStream(e, thisIndex),
+            ()=> this._updateTabConfig(sessionId, { socketIsReady: true }),
+            (e)=> this._onStream(e, sessionId),
+            (e, receiverId)=> this._onSessionClosed(e, receiverId, sessionId),
         );
 
-        let id;
+        let monitorId;
         if(createSessionType === 'broadcast') {
-            id = rtcSession.connection.token();
+            monitorId = rtcSession.connection.token();
         };
         if(createSessionType === 'view') {
-            id = form.sessionId.value;
+            monitorId = form.sessionId.value;
         };
 
         this._createTab({
             title,
-            id,
+            id: sessionId,
+            monitorId,
             broadcasterId: null, // receive from stream
             sessionType: createSessionType,
             rtcSession,
@@ -324,23 +327,31 @@ class Home extends Component {
         this._closeModal();
     }
 
-    _onStream(e, thisIndex) {
+    _onStream(e, id) {
         const { stream, userid, type } = e;
 
-        this._updateTabConfig(thisIndex, { 
+        this._updateTabConfig(id, { 
             srcObject: stream,
             src: URL.createObjectURL(stream),
             broadcasterId: userid,
             streamType: type,
             loading: false 
         });
-    }   
+    }
 
-    _updateTabConfig(index, config) {
-        c.log('update tab config, index: '+index, config);
+    _onSessionClosed(e, receiverId,id) {
+        c.log(receiverId + ': session is closed by: '+e.userid);
 
-        let tabs = this.state.tabs.map((tabConfig, i) => {
-            if(i === index)
+        let closedIndex = _.findIndex(this.state.tabs, { id });
+
+        this.setState({ tabIndex: closedIndex }, ()=> setTimeout(()=>alert(receiverId + ': session is closed by: '+e.userid), 0) );
+    }
+
+    _updateTabConfig(id, config) {
+        c.log('update tab config, id: '+id, config);
+
+        let tabs = this.state.tabs.map((tabConfig, index) => {
+            if(tabConfig.id === id)
                 return { ...tabConfig, ...config };
             return tabConfig;
         });
@@ -406,3 +417,8 @@ class Home extends Component {
 }
 
 export default Home;
+
+
+// functions 
+
+const generateRandomString = () => Math.random().toString(36).substr(2, 14);

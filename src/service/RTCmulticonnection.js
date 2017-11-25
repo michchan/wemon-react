@@ -14,7 +14,7 @@ var RTCMultiConnection = window.RTCMultiConnection; // the class
 
 export default class RTCMultiConnectionSession {
 
-    constructor(connectedSocketCallback=()=>{}, onStreamCallback=()=>{}, sessionId) {
+    constructor(connectedSocketCallback=()=>{}, onStreamCallback=()=>{}, onSessionClosedCallback=()=>{}, sessionId) {
         if(!RTCMultiConnection) return log('RTCMultiConnection undefined');
 
         if(sessionId) this.connection = new RTCMultiConnection(sessionId);
@@ -35,7 +35,7 @@ export default class RTCMultiConnectionSession {
         
         _setConnectionParams(this.connection);
         _setSocketConnection(this.connection, connectedSocketCallback);
-        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, onStreamCallback);
+        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, onStreamCallback, onSessionClosedCallback);
     
         log('Constructed connection object with default params set');
         log('Connection object: with session id: '+sessionId, this.connection);
@@ -72,8 +72,8 @@ const _setSocketConnection = (connection, connectedSocketCallback) => {
     });
 };
 
-const _setConnectionEventHandler = (connection, userEventHandlers, refs, buffer, onStreamCallback = ()=>{}) => {
-    let handlers = _getConnectionEventHandlers(connection, refs, buffer, onStreamCallback);
+const _setConnectionEventHandler = (connection, userEventHandlers, refs, buffer, onStreamCallback = ()=>{}, onSessionClosedCallback) => {
+    let handlers = _getConnectionEventHandlers(connection, refs, buffer, onStreamCallback, onSessionClosedCallback);
 
     connection.onstream = handlers.onStream;
     connection.onstreamended = handlers.onStreamEnded;
@@ -146,7 +146,7 @@ const _socketHandlers = (connection, socket) => ({
 
 }); // end _socketHandlers
 
-const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
+const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback, onSessionClosedCallback) => ({
 
     onStream: (event) => {
         log(`######### ${connection.userid} onStream #########`, event, refs.video, event.stream);
@@ -252,21 +252,22 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback)
     }, // end onLeave
 
     onEntireSessionClosed: (e) => {
-        log(connection.userid + ' received entire session closed');
+        if(connection.userid !== e.userid) {
+            log(connection.userid + ': received entire session closed: '+e.userid);
+            onSessionClosedCallback(e, connection.userid);
+        }
     },
 
     onExtraDataUpdated: function(e) {
         log(connection.userid + ' received extra data updated from: '+ e.userid, e.extra);
-
     },
 
     onleave: (e) => {
-        log(connection.userid + ' received sb leave');
+        log(connection.userid + ' received leave from: '+e.userid);
     },
 
     onclose: (e) => {
-        log(connection.userid + ' received Broadcaster closed the monitor');
-        alert('Broadcaster closed the monitor');
+        log(connection.userid + ' received Broadcaster closed the monitor: '+e.userid);
     },
 });
 
@@ -307,14 +308,18 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
     
     leave: (type) => {
         if(connection.isInitiator) {
-            connection.closeEntireSession();
+            connection.extra.closed = true;
+            connection.updateExtraData();
+            connection.close() || connection.closeEntireSession();
+            log('Closed session as initiator by' + connection.userid);
         } else {
+            connection.extra.left = true;
+            connection.updateExtraData();
             connection.leave();
+            log('Left session as viewer: ' + connection.userid);
         };
 
         connection = null;
-        
-        log('Removed session and disconnect with all peers on leave');
     }
 
 });

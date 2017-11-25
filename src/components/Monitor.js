@@ -35,7 +35,7 @@ class Monitor extends Component {
                               <h3>{ `Type: ${this.props.sessionType}` }</h3>
                               <h5>{ `User ID: ${this.connection.userid}` }</h5>
                               <h5>{ `Broadcaster ID: ${this.props.broadcasterId}` }</h5>
-                              <h3>{ `Monitor ID: ${this.props.id}` }</h3>
+                              <h3>{ `Monitor ID: ${this.props.monitorId}` }</h3>
                         </div>
                         <div>
                               <video 
@@ -54,7 +54,7 @@ class Monitor extends Component {
             if(nextProps.socketIsReady !== this.props.socketIsReady) {
                   c.log('socketIsReady changed, ', nextProps.socketIsReady);
                   // Join or Open a monitor
-                  this.rtc.userEventHandlers.openOrJoin(this.props.id);
+                  this.rtc.userEventHandlers.openOrJoin(this.props.monitorId);
             };
             if(nextProps.srcObject && nextProps.srcObject !== this.props.srcObject) {
                   this.refs.video.srcObject = nextProps.srcObject;
