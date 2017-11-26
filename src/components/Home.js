@@ -361,11 +361,18 @@ class Home extends Component {
             broadcasterId: null, // receive from stream
             sessionType: createSessionType,
             rtcSession,
+            updateTabConfig: (config)=>this._updateTabConfig(sessionId, config),            
             socketIsReady: false,
-            // src: null,
             srcObject: null,
             loading: true,
             restartSession: ()=>{},
+            muted: createSessionType === 'broadcast'? true : false,
+            resolutions: rtcSession.userEventHandlers.getResolutions() || [],
+            frameRates: rtcSession.userEventHandlers.getFrameRates() || [],
+            resolution: createSessionType === 'view'? null : rtcSession.userEventHandlers.getDefaultResolution(),            
+            minFrameRate: createSessionType === 'view'? null : rtcSession.userEventHandlers.getDefaultMinFrameRate(),
+            maxFrameRate: createSessionType === 'view'? null : rtcSession.userEventHandlers.getDefaultMaxFrameRate(),
+            remoteConstraints: {},
         };
         tabConfig.restartSession = (monitorId)=>this._restartSession(sessionId, tabConfig, monitorId);
 
@@ -416,7 +423,7 @@ class Home extends Component {
 
         this.setState({ tabIndex: closedIndex }, ()=> setTimeout(()=>{
             let tabConfig = _.find(this.state.tabs, { id });
-            tabConfig && toast('Monitor stream is closed or restarted for '+e.userid, { type: 'info', autoClose: 6000 });
+            tabConfig && toast('Monitor stream id: '+e.userid+' is closed or restarted by remote user', { type: 'error', autoClose: 6000 });
         }, 0));
     }
 

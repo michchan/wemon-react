@@ -145,7 +145,7 @@ const _socketHandlers = (connection, socket) => ({
             OfferToReceiveAudio: !!connection.session.audio
         };
         connection.broadcastId = hintsToJoinBroadcast.broadcastId;
-        connection.join(hintsToJoinBroadcast.userid);
+        connection.connectionDescription = connection.join(hintsToJoinBroadcast.userid);
     },
 
     rejoinBroadcast: (broadcastId) => {
@@ -184,7 +184,7 @@ const _socketHandlers = (connection, socket) => ({
         // "open" method here will capture media-stream
         // we can skip this function always; it is totally optional here.
         // we can use "connection.getUserMediaHandler" instead
-        connection.open(connection.userid, function () {
+        connection.connectionDescription = connection.open(connection.userid, function () {
             logSocket('room id: ' + connection.sessionid);
             // showRoomURL(connection.sessionid);
         });
@@ -196,6 +196,7 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
 
     onStream: (event) => {
         log(`######### ${connection.userid} onStream #########`, event, refs.video, event.stream);
+        log(event);
 
         if (connection.isInitiator && event.type !== 'local') {
             return log('Broadcaster receives local stream');
@@ -209,6 +210,7 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
 
         /* Callback for setting video src */
         onStreamCallback(event, connection.mediaConstraints); // callback for setState src, set video srcObject or src here
+        onExtraDataUpdatedCallback(event);
 
         if (connection.isInitiator == false && event.type === 'remote') {
             // he is merely relaying the media
@@ -422,6 +424,12 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
         renegotiateConnection(connection, onStreamCallback, errorCallback);
     },
 
+    rejoinConnection: (errorCallback=()=>{}) => {
+        log('Rejoin Connection');
+        renegotiateConnection(connection, onStreamCallback, errorCallback);
+        connection.rejoin(connection.connectionDescription);
+    },
+
 });
 
 const updateConstraintsInChrome = (connection, constraints, onStreamCallback, errorCallback) => {
@@ -563,7 +571,7 @@ const renegotiateConnection = (connection, onStreamCallback, errorCallback) => {
             setTimeout(function() {
                 oldStream.stop();
                 // re-enable any button here
-            }, 5000);
+            }, 500);
     
             connection.getAllParticipants().forEach(function (pid) {
                 if (`${pid}` != `${connection.userid}`) {
