@@ -16,6 +16,26 @@
   padding-left: 0;
 }
 
+.no-margin {
+  margin: 0;
+}
+
+.no-top-margin {
+  margin-top: 0px;
+}
+
+.no-background {
+  background: transparent;
+}
+
+.no-border {
+  border: 0;
+}
+
+.inline {
+  display: inline;
+}
+
 body {
   background-color: #DEDEDE;
   font-family: "Helvetica-Neue", Helvetica, Verdana;
@@ -130,12 +150,20 @@ body {
   color: #222;
   margin-left: 5px;
 }
+.Home-tabs__plus-button:hover {
+  background: #333;
+  color: #fff;
+}
 
 .Home-tabs__cross-button {
   background: rgba(0,0,0,0);
   margin-left: 5px;
   border: 0;
 }
+.Home-tabs__cross-button:hover {
+  color: #777;
+}
+
 
 .fa-video-camera {
   color: rgb(199, 65, 65);
@@ -146,6 +174,7 @@ body {
   right: 40px;
   padding: 0 0 0 5px;
   background: inherit; 
+  z-index: 10;
 }
 .tab-panel__loading {
   position: absolute;
@@ -156,10 +185,24 @@ body {
   display: flex;
   align-items: top;
   justify-content: center;
+  z-index: 100;
 }
 /* end tabs */
 
+/* react toastify */
+.toast-dark {
+  background: #323232;
+  color: #fff;
+}
 
+.toast-dark > .toastify__close{
+  color: #fff;
+}
+
+.toast-transparent-progress{
+  background:  rgba(255,255,255,.7);
+}
+/* end react toastify */
 
 .Home-input-container {
   width: 100vw;
@@ -206,14 +249,36 @@ body {
 .Monitor-container {
   background-color: #4D5656;
   color: #fff;
-  padding: 5px 5px 20px 5px;
+  padding: 20px 5px 20px 5px;
   min-height: 0.7vh;
 }
 .Monitor__video {
   min-width: 450px;
   min-height: 350px;
+  background: #000;
 }
-
+.Monitor__info-container {
+  text-align: left;
+  padding: 0px 10px 10px 10px;
+}
+.Monitor__config-container {
+  padding: 20px 10px 10px 0px;
+  margin-left: 10px;
+  border: 1px solid #777;
+  border-width: 0;
+  border-top-width: 1px;
+  text-align: left;
+}
+.Monitor__video-col {
+  text-align: left;
+}
+.Monitor__monitor-id-btn {
+  padding: 0;
+  display: inline-block;
+}
+.Monitor__monitor-id-btn:hover {
+  color: #999;
+}
 
 
 

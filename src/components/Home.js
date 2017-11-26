@@ -2,6 +2,7 @@ import React, { Component } from 'react';
 import { Link } from 'react-router-dom';
 import { Tab, Tabs, TabList, TabPanel } from 'react-tabs';
 import _ from 'lodash';
+import { ToastContainer, toast } from 'react-toastify';
 import { Modal, ModalHeader, ModalBody, ModalFooter, Button } from 'elemental';
 import { Form, FormControl, FormGroup, ControlLabel, HelpBlock, ToggleButtonGroup, ToggleButton } from 'react-bootstrap';
 import {
@@ -73,6 +74,7 @@ class Home extends Component {
                 <div className='row no-gutters'>
                     { this._renderBody() }
                     { this._renderCreateSessionModal() }
+                    { <ToastContainer/> }
                 </div>
             </div>
         );
@@ -113,7 +115,7 @@ class Home extends Component {
                 <Tab key={index}>
                     { isBroadcast && <span><i className="fa fa-video-camera" aria-hidden="true" color='red'></i>&nbsp;&nbsp;</span> }
                     { tabConfig.title }
-                    { tabConfig.loading && <span className='tab__loading'><FadingCircle size={25} color="grey"/></span>}
+                    { tabConfig.loading && <span className='tab__loading'><FadingCircle size={25} color="#AEAEAE"/></span>}
                     <button onClick={ ()=>this._onRemoveSessionClick(index, tabConfig) } className='Home-tabs__cross-button'> &#x2715; </button>
                 </Tab>
             );
@@ -130,7 +132,7 @@ class Home extends Component {
                             <FadingCircle size={60}  color="white"/>
                         </div>
                     }
-                    <Monitor { ...tabConfig }/>
+                    <Monitor { ...tabConfig } toast={toast}/>
                 </div>
             </TabPanel>
         ));
@@ -184,7 +186,7 @@ class Home extends Component {
         const isBroadcast = createSessionType === 'broadcast';
 
         return (
-            <Form refs={'form'}>
+            <Form>
                 {
                     /* ToggleButton for createSessionType */
                     <FormGroup>
@@ -340,7 +342,7 @@ class Home extends Component {
 
         let rtcSession = new RTCService( 
             ()=> this._updateTabConfig(sessionId, { socketIsReady: true }),
-            (e)=> this._onStream(e, sessionId),
+            (e, constraints)=> this._onStream(e, sessionId, constraints),
             (e, receiverId)=> this._onSessionClosed(e, receiverId, sessionId),
         );
 
@@ -352,7 +354,7 @@ class Home extends Component {
             monitorId = form.sessionId.value;
         };
 
-        this._createTab({
+        let tabConfig = {
             title,
             id: sessionId,
             monitorId,
@@ -360,23 +362,50 @@ class Home extends Component {
             sessionType: createSessionType,
             rtcSession,
             socketIsReady: false,
-            src: null,
+            // src: null,
             srcObject: null,
             loading: true,
-        });
+            restartSession: ()=>{},
+        };
+        tabConfig.restartSession = (monitorId)=>this._restartSession(sessionId, tabConfig, monitorId);
 
+        this._createTab(tabConfig);
         this._closeModal();
     }
 
-    _onStream(e, id) {
+    _restartSession(sessionId, _tabConfig, monitorId) {
+        let tabConfig = { ..._tabConfig };
+        this._updateTabConfig(sessionId, tabConfig);   
+
+        tabConfig.rtcSession = new RTCService( 
+            ()=> this._updateTabConfig(sessionId, { socketIsReady: true }),
+            (e, constraints)=> this._onStream(e, sessionId, constraints),
+            (e, receiverId)=> this._onSessionClosed(e, receiverId, sessionId),
+        );
+
+        if(tabConfig.sessionType === 'broadcast') {
+            tabConfig.monitorId = tabConfig.rtcSession.connection.token();
+        } else { // if the viewer has provide a new monitorId
+            if(monitorId) tabConfig.monitorId = monitorId;
+            // if not, use the old one
+        }
+        c.log('Restart session with tabConfig: ', tabConfig);
+
+        this._updateTabConfig(sessionId, tabConfig);        
+    }
+
+    _onStream(e, id, constraints) {
         const { stream, userid, type } = e;
+        
+        c.log(userid+' receives on Stream. src: ', URL.createObjectURL(stream));
 
         this._updateTabConfig(id, { 
             srcObject: stream,
-            src: URL.createObjectURL(stream),
+            // src: URL.createObjectURL(stream),
             broadcasterId: userid,
             streamType: type,
-            loading: false 
+            loading: false,
+            remoteConstraints: constraints,
         });
     }
 

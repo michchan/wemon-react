@@ -8,14 +8,31 @@ import {
     logErrorEvent,
 } from './log';
 
-window.io = io; // RTCMultiConnection need to access the io class
+const RESOLUTIONS = [
+    { name: 'QQVGA', width: 160, height: 120 },
+    { name: 'QCIF', width: 176, height: 144 },
+    { name: 'QVGA', width: 320, height: 240 },
+    { name: 'CIF', width: 352, height: 288 },
+    { name: '360p(nHD)', width: 640, height: 360, default: true },
+    { name: 'VGA', width: 640, height: 480 },
+    { name: 'SVGA', width: 800, height: 600 },
+    { name: '720p(HD)', width: 1280, height: 720 },
+];
 
+window.io = io; // RTCMultiConnection need to access the io class
 var RTCMultiConnection = window.RTCMultiConnection; // the class
 
 export default class RTCMultiConnectionSession {
 
-    constructor(connectedSocketCallback=()=>{}, onStreamCallback=()=>{}, onSessionClosedCallback=()=>{}, sessionId) {
+    constructor(connectedSocketCallback=()=>{}, onStreamCallback=()=>{}, onSessionClosedCallback=()=>{}, onExtraDataUpdatedCallback=()=>{}, sessionId) {
         if(!RTCMultiConnection) return log('RTCMultiConnection undefined');
+
+        // bind this for later usage
+        this.connectedSocketCallback = connectedSocketCallback;
+        this.onStreamCallback = onStreamCallback;
+        this.onSessionClosedCallback = onSessionClosedCallback;
+        this.onExtraDataUpdatedCallback = onExtraDataUpdatedCallback;
+        this.sessionId = sessionId;
 
         if(sessionId) this.connection = new RTCMultiConnection(sessionId);
         else this.connection = new RTCMultiConnection();
@@ -36,11 +53,15 @@ export default class RTCMultiConnectionSession {
         _setConnectionParams(this.connection);
         _setConnectionConstraint(this.connection);
         _setSocketConnection(this.connection, connectedSocketCallback);
-        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, onStreamCallback, onSessionClosedCallback);
+        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback);
     
         log('Constructed connection object with default params set');
         log('Connection object: with session id: '+sessionId, this.connection);
     };
+
+    setExtraDataUpdateHandler(handler) {
+        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, this.onStreamCallback, this.onSessionClosedCallback, handler);
+    }
 
 } // class RTCMultiConnectionSession
 
@@ -59,9 +80,9 @@ const _setConnectionParams = (connection) => {
 
 const _setConnectionConstraint = (connection) => {
     let defaultConstraints = {
-        width: 720,
-        height: 480,
-        echoCancellation: false, // disabling audio processing
+        width: _getUserEventHandlers(connection).getDefaultResolution().width,
+        height: _getUserEventHandlers(connection).getDefaultResolution().height,
+        // echoCancellation: false, // disabling audio processing
         // googAutoGainControl: true,
         // googNoiseSuppression: true,
         // googHighpassFilter: true,
@@ -91,8 +112,8 @@ const _setSocketConnection = (connection, connectedSocketCallback) => {
     });
 };
 
-const _setConnectionEventHandler = (connection, userEventHandlers, refs, buffer, onStreamCallback = ()=>{}, onSessionClosedCallback) => {
-    let handlers = _getConnectionEventHandlers(connection, refs, buffer, onStreamCallback, onSessionClosedCallback);
+const _setConnectionEventHandler = (connection, userEventHandlers, refs, buffer, onStreamCallback = ()=>{}, onSessionClosedCallback = ()=>{}, onExtraDataUpdatedCallback = ()=>{}) => {
+    let handlers = _getConnectionEventHandlers(connection, refs, buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback);
 
     connection.onstream = handlers.onStream;
     connection.onstreamended = handlers.onStreamEnded;
@@ -165,13 +186,13 @@ const _socketHandlers = (connection, socket) => ({
 
 }); // end _socketHandlers
 
-const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback, onSessionClosedCallback) => ({
+const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback) => ({
 
     onStream: (event) => {
         log(`######### ${connection.userid} onStream #########`, event, refs.video, event.stream);
 
         if (connection.isInitiator && event.type !== 'local') {
-            return;
+            return log('Broadcaster receives local stream');
         };
 
         if(!refs.video) logErr('onStream: No video Ref');
@@ -181,7 +202,7 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
         connection.isUpperUserLeft = false;
 
         /* Callback for setting video src */
-        onStreamCallback(event); // callback for setState src, set video srcObject or src here
+        onStreamCallback(event, connection.mediaConstraints); // callback for setState src, set video srcObject or src here
 
         if (connection.isInitiator == false && event.type === 'remote') {
             // he is merely relaying the media
@@ -283,6 +304,7 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
 
     onExtraDataUpdated: function(e) {
         log(connection.userid + ' received extra data updated from: '+ e.userid, e.extra);
+        onExtraDataUpdatedCallback(e);
     },
 
     onleave: (e) => {
@@ -329,46 +351,68 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
         });
     },
     
-    leave: (type) => {
+    leave: (remainConnected = false) => {
         if(connection.isInitiator) {
-            connection.extra.closed = true;
-            connection.updateExtraData();
-            connection.close() || connection.closeEntireSession();
+            closeConnection(connection);
             log('Closed session as initiator by' + connection.userid);
         } else {
-            connection.extra.left = true;
-            connection.updateExtraData();
-            connection.leave();
+            leaveConnection(connection);
             log('Left session as viewer: ' + connection.userid);
         };
 
-        connection = null;
+        if(!remainConnected)
+            connection = null;
     },
 
-    applyConstraints: (constraints) => {
+    applyConstraints: (constraints, errorCallback=()=>{}) => {
         let validConstraints = filterConstraintsByBrowser(connection, constraints);
         log('Apply Constraints, ', validConstraints);
 
         if(connection.DetectRTC.browser.name === 'Chrome') {
-            updateConstraintsInChrome(connection, validConstraints, onStreamCallback);
-            return;
+            updateConstraintsInChrome(connection, validConstraints, onStreamCallback, errorCallback);
+        } else {
+            // for Firefox
+            try {
+                connection.applyConstraints(validConstraints);
+                connection.extra.closed = true;
+                connection.updateExtraData();
+            } catch (error) {
+                logErr('Apply Constraints ERROR: ', error);
+                errorCallback(error);
+            }
+        };
+        
+        if(connection.isInitiator) {
+            connection.extra.constraints = validConstraints;
+            connection.updateExtraData();
         }
-        // for Firefox
-        connection.applyConstraints(validConstraints);
     },
 
-    muteOrUnmuteStream: (mute = true) => {
+    muteOrUnmuteStream: (mute = true, errorCallback=()=>{}) => {
         let streamEvent = connection.streamEvents.selectFirst();
         if(!streamEvent) return logErr('muteOrUnmuteStream: streamEvent undefined');
 
-        log(mute? 'Mute stream ': 'Unmute stream', streamEvent);
-        mute && streamEvent.stream.mute('both');
-        !mute && streamEvent.stream.unmute('both');
+        try {
+            log(mute? 'Mute stream ': 'Unmute stream', streamEvent);
+            mute && streamEvent.stream.mute('both');
+            !mute && streamEvent.stream.unmute('both');  
+        } catch (error) {
+            logErr('muteOrUnmuteStream ERROR: ', error);
+            errorCallback(error);
+        }
+    },
+
+    getResolutions: () => RESOLUTIONS.slice().reverse(),
+    getDefaultResolution: () => _.find(RESOLUTIONS, { default: true }),
+
+    refreshConnection: (errorCallback=()=>{}) => {
+        log('Refresh Connection');
+        renegotiateConnection(connection, onStreamCallback, errorCallback);
     },
 
 });
 
-const updateConstraintsInChrome = (connection, constraints, onStreamCallback) => {
+const updateConstraintsInChrome = (connection, constraints, onStreamCallback, errorCallback) => {
     connection.getAllParticipants().forEach(function(uid) {
         var user = connection.peers[uid];
     
@@ -377,34 +421,9 @@ const updateConstraintsInChrome = (connection, constraints, onStreamCallback) =>
         });
     });
     
-    var oldStream = connection.attachStreams[0];
-
     connection.mediaConstraints = constraints; // update constraints
 
-    navigator.webkitGetUserMedia(connection.mediaConstraints, function(newStream) {
-
-        connection.attachStreams = [newStream];
-        
-        // var video = document.createElement('video');
-        // video.src = URL.createObjectURL(newStream);
-        // connection.videosContainer.appendChild(video);
-        // video.play();
-        log(newStream);
-        onStreamCallback({ stream: newStream, userid: connection.userid });
-
-        setTimeout(function() {
-            // video.play();
-            oldStream.stop();
-            // setTimeout(function() {
-            //     video.id = connection.userid;
-            //     document.getElementById('btn-change-resolutions').disabled = false;
-            // }, 2000);
-        }, 5000);
-        connection.renegotiate();
-
-    }, function(error) {
-        alert(JSON.stringify(error, null, '\t'));
-    });
+    renegotiateConnection(connection, onStreamCallback, errorCallback);
 };
 
 
@@ -416,6 +435,9 @@ const filterConstraintsByBrowser = (connection, constraints) => {
         { video: {}, audio: {} };
     let supports = navigator.mediaDevices.getSupportedConstraints();
     log('MediaConstraints support: ', supports);
+
+    // if safari or opera etc.
+    if(!isChrome && !isFirefox) return { video: true, audio: true };
 
     /* Video Constraints */
     if (supports.width && constraints.width) {
@@ -450,14 +472,14 @@ const filterConstraintsByBrowser = (connection, constraints) => {
     if(supports.deviceId && constraints.deviceId) {
         if(isFirefox) filteredConstraints.video.deviceId = constraints.deviceId;
         else {
-            !filteredConstraints.video.optional[0] && filteredConstraints.video.optional.push({});
+            filteredConstraints.video.optional.length === 0 && filteredConstraints.video.optional.push({});
             filteredConstraints.video.optional[0].sourceId = constraints.deviceId;
         }
     }
     if(supports.facingMode && constraints.facingMode) {
         if(isFirefox) filteredConstraints.video.facingMode = constraints.facingMode;
         else {
-            !filteredConstraints.video.optional[0] && filteredConstraints.video.optional.push({});
+            filteredConstraints.video.optional.length === 0 && filteredConstraints.video.optional.push({});
             filteredConstraints.video.optional[0].facingMode = constraints.facingMode;
         }
     }
@@ -474,3 +496,49 @@ const filterConstraintsByBrowser = (connection, constraints) => {
     log('Filtered Constraints by browser', filteredConstraints);
     return filteredConstraints;
 };
+
+const closeConnection = (connection) => {
+    connection.extra.closed = true;
+    connection.updateExtraData();
+    connection.close() || connection.closeEntireSession();
+    log('Closed session as initiator by' + connection.userid);
+};
+
+const leaveConnection = (connection) => {
+    connection.extra.left = true;
+    connection.updateExtraData();
+    connection.leave();
+    log('Left session as viewer: ' + connection.userid);
+}
+
+const renegotiateConnection = (connection, onStreamCallback, errorCallback) => {
+    let oldStream = connection.attachStreams[0];
+
+    navigator.webkitGetUserMedia(connection.mediaConstraints, function(newStream) {
+        
+        try {
+            connection.attachStreams = [newStream];
+            
+            log('New Local Stream: ', newStream);
+            onStreamCallback({ stream: newStream, userid: connection.userid }, connection.mediaConstraints); // attach srcObject to video tag and play stream
+    
+            setTimeout(function() {
+                oldStream.stop();
+                // re-enable any button here
+            }, 5000);
+    
+            connection.getAllParticipants().forEach(function (pid) {
+                if (`${pid}` != `${connection.userid}`) {
+                    connection.renegotiate(pid);
+                }
+            });
+        } catch(error) {
+            logErr('Renegotiation ERROR: ', error);
+            errorCallback(error);
+        }
+
+    }, function(error) {
+        logErr('getUserMedia ERROR: ', error);
+        errorCallback(error);
+    });
+}
