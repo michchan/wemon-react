@@ -29,7 +29,7 @@ var c;
 
 const formProps = {
     sessionName: 'sessionName',
-    sessionId: 'sessionId',
+    monitorId: 'monitorId',
 };
 
 class Home extends Component {
@@ -37,6 +37,8 @@ class Home extends Component {
         super(props);
 
         c = new ComponentLogging('Home');
+
+        this.toastId = null;
 
         this.state = {
             initialized: false,
@@ -132,7 +134,7 @@ class Home extends Component {
                             <FadingCircle size={60}  color="white"/>
                         </div>
                     }
-                    <Monitor { ...tabConfig } toast={toast}/>
+                    <Monitor { ...tabConfig } toast={this._toastPreventingMultiple.bind(this)}/>
                 </div>
             </TabPanel>
         ));
@@ -223,21 +225,28 @@ class Home extends Component {
                     !isBroadcast && 
                     <FormGroup
                         controlId="formSessionId"
-                        validationState={ form.sessionId.validation }
+                        validationState={ form.monitorId.validation }
                     >
                         <ControlLabel>*Monitor Session Id: </ControlLabel>
                         <FormControl
                             type="text"
-                            value={ form.sessionId.value }
+                            value={ form.monitorId.value }
                             placeholder="Enter the universal id of monitor you want to view..."
-                            onChange={e => this._onFormChange(e, formProps.sessionId)}
+                            onChange={e => this._onFormChange(e, formProps.monitorId)}
                         />
                         <FormControl.Feedback />
-                        { (form.sessionId.validation && form.sessionId.validationMessage) && <HelpBlock>{ form.sessionId.validationMessage }</HelpBlock> }
+                        { (form.monitorId.validation && form.monitorId.validationMessage) && <HelpBlock>{ form.monitorId.validationMessage }</HelpBlock> }
                     </FormGroup>
                 }
             </Form>
         );
+    }
+
+    _toastPreventingMultiple(msg, options) {
+        c.log('TOAST ACTIVE? ',! toast.isActive(this.toastId));
+        if(! toast.isActive(this.toastId)) {
+            this.toastId = toast(msg, options);
+        };
     }
 
     _autoFocusButtons(state, e) {
@@ -253,7 +262,7 @@ class Home extends Component {
                 validation: null,
                 validationMessage: null,
             },
-            sessionId: {
+            monitorId: {
                 value: '',
                 validation: null,
                 validationMessage: null,
@@ -291,7 +300,7 @@ class Home extends Component {
             return null;
         };
 
-        if( propName === formProps.sessionId ) {
+        if( propName === formProps.monitorId ) {
             if (length > 10) return {
                 status: 'success',
                 message: null,
@@ -309,7 +318,7 @@ class Home extends Component {
         const { form, createSessionType } = this.state;
         let _form;
         let allValid = true;
-        let title = _.isEmpty(form.sessionName.value)? 'Unnamed Monitor Session' : form.sessionName.value; // auto fill title
+        let title = _.isEmpty(form.sessionName.value)? 'New Session' : form.sessionName.value; // auto fill title
         
         // Filter fields to check by type
         if(createSessionType === 'broadcast') {
@@ -320,7 +329,7 @@ class Home extends Component {
         if(createSessionType === 'view') {
             _form = {
                 sessionName: form.sessionName,
-                sessionId: form.sessionId
+                monitorId: form.monitorId
             };
         };
 
@@ -351,7 +360,7 @@ class Home extends Component {
             monitorId = rtcSession.connection.token();
         };
         if(createSessionType === 'view') {
-            monitorId = form.sessionId.value;
+            monitorId = form.monitorId.value;
         };
 
         let tabConfig = {
@@ -431,8 +440,9 @@ class Home extends Component {
         c.log('update tab config, id: '+id, config);
 
         let tabs = this.state.tabs.map((tabConfig, index) => {
-            if(tabConfig.id === id)
+            if(tabConfig.id === id) {
                 return { ...tabConfig, ...config };
+            }
             return tabConfig;
         });
         this.setState({ tabs });

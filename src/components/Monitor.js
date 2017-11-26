@@ -2,7 +2,6 @@ import React, { Component } from 'react';
 import { ComponentLogging, logDOMError } from '../service/log';
 import _ from 'lodash';
 import {CopyToClipboard} from 'react-copy-to-clipboard';
-import { ToastContainer, toast } from 'react-toastify';
 import { Button, ButtonToolbar, ButtonGroup, FormGroup, ControlLabel, DropdownButton, MenuItem, Form } from 'react-bootstrap';
 
 let c;
@@ -313,18 +312,18 @@ class Monitor extends Component {
       
                               if(oldWidth !== newWidth || oldHeight !== newHeight) {
                                     let newRes = _.find(this.props.resolutions, { width: newWidth, height: newHeight });
-                                    // this.props.toast && toast(`Remote resolution is changed to ${newRes.name} - ${newWidth}x${newHeight}`, {
-                                    //       type: 'info',
-                                    //       autoClose: 3000,
-                                    // });
+                                    this.props.toast && this.props.toast(`Remote resolution is changed to ${newRes.name} - ${newWidth}x${newHeight} at ${this.props.title}`, {
+                                          type: 'info',
+                                          autoClose: 4000,
+                                    });
                               };
                               if(+oldMinFps !== +newMinFps || +oldMaxFps !== +newMaxFps) {
                                     let newMin = _.find(this.props.frameRates, { fps: +newMinFps });
                                     let newMax = _.find(this.props.frameRates, { fps: +newMaxFps });
-                                    // this.props.toast && toast(`Remote frame rate is changed ! Min: ${newMin.fps}, Max: ${newMax.fps}`, {
-                                    //       type: 'info',
-                                    //       autoClose: 3000,
-                                    // });
+                                    this.props.toast && this.props.toast(`Remote frame rate is changed ! Min: ${newMin.fps}, Max: ${newMax.fps} at ${this.props.title}`, {
+                                          type: 'info',
+                                          autoClose: 4000,
+                                    });
                               };
                         }
                   };

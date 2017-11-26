@@ -19,10 +19,13 @@ const RESOLUTIONS = [
     { name: '720p(HD)', width: 1280, height: 720 },
 ];
 const FRAME_RATES = [
-    { name: 'Low', fps: 10, default: 'min' },
-    { name: 'Normal', fps: 15, default: 'max' },
-    { name: 'High', fps: 25 },
-    { name: 'Very High', fps: 30 },
+    { name: 'Poor', fps: 10 },
+    { name: 'Very Low', fps: 15, default: 'min' },
+    { name: 'Low', fps: 20 },
+    { name: 'Acceptable', fps: 25 },
+    { name: 'Normal', fps: 30, default: 'max' },
+    { name: 'Very High', fps: 45 },
+    { name: 'Excellent', fps: 60 },
 ];
 
 window.io = io; // RTCMultiConnection need to access the io class
@@ -426,21 +429,12 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
 
     rejoinConnection: (errorCallback=()=>{}) => {
         log('Rejoin Connection');
-        renegotiateConnection(connection, onStreamCallback, errorCallback);
         connection.rejoin(connection.connectionDescription);
     },
 
 });
 
 const updateConstraintsInChrome = (connection, constraints, onStreamCallback, errorCallback) => {
-    connection.getAllParticipants().forEach(function(uid) {
-        var user = connection.peers[uid];
-    
-        user.peer.getLocalStreams().forEach(function(localStream) {
-            user.peer.removeStream(localStream);
-        });
-    });
-    
     connection.mediaConstraints = { ...connection.mediaConstraints, ...constraints }; // update constraints
 
     renegotiateConnection(connection, onStreamCallback, errorCallback);
@@ -571,7 +565,7 @@ const renegotiateConnection = (connection, onStreamCallback, errorCallback) => {
             setTimeout(function() {
                 oldStream.stop();
                 // re-enable any button here
-            }, 500);
+            }, 3000);
     
             connection.getAllParticipants().forEach(function (pid) {
                 if (`${pid}` != `${connection.userid}`) {
