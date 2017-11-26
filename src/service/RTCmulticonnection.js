@@ -18,6 +18,12 @@ const RESOLUTIONS = [
     { name: 'SVGA', width: 800, height: 600 },
     { name: '720p(HD)', width: 1280, height: 720 },
 ];
+const FRAME_RATES = [
+    { name: 'Low', fps: 10, default: 'min' },
+    { name: 'Normal', fps: 15, default: 'max' },
+    { name: 'High', fps: 25 },
+    { name: 'Very High', fps: 30 },
+];
 
 window.io = io; // RTCMultiConnection need to access the io class
 var RTCMultiConnection = window.RTCMultiConnection; // the class
@@ -82,13 +88,13 @@ const _setConnectionConstraint = (connection) => {
     let defaultConstraints = {
         width: _getUserEventHandlers(connection).getDefaultResolution().width,
         height: _getUserEventHandlers(connection).getDefaultResolution().height,
-        // echoCancellation: false, // disabling audio processing
+        echoCancellation: false, // disabling audio processing
         // googAutoGainControl: true,
         // googNoiseSuppression: true,
         // googHighpassFilter: true,
         // googTypingNoiseDetection: true,
-        minFrameRate: 15,
-        maxFrameRate: 30,
+        minFrameRate: _getUserEventHandlers(connection).getDefaultMinFrameRate().fps,
+        maxFrameRate: _getUserEventHandlers(connection).getDefaultMaxFrameRate().fps,
         aspectRatio: 1.2,
     };
     
@@ -260,6 +266,10 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
 
     onStreamEnded: (e)=>{
         log(connection.userid + ' receive onStreamEnded ');
+        // if(connection.userid !== e.userid) {
+        //     log(connection.userid + ': received media stream ended: '+e.userid);
+        //     onSessionClosedCallback(e, connection.userid);
+        // }
     },
 
     onLeave: (event) => {
@@ -303,7 +313,7 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
     },
 
     onExtraDataUpdated: function(e) {
-        log(connection.userid + ' received extra data updated from: '+ e.userid, e.extra);
+        // log(connection.userid + ' received extra data updated from: '+ e.userid, e.extra);
         onExtraDataUpdatedCallback(e);
     },
 
@@ -366,7 +376,7 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
 
     applyConstraints: (constraints, errorCallback=()=>{}) => {
         let validConstraints = filterConstraintsByBrowser(connection, constraints);
-        log('Apply Constraints, ', validConstraints);
+        log('Apply Constraints, ', validConstraints, 'last Constraints, ', connection.mediaConstraints);
 
         if(connection.DetectRTC.browser.name === 'Chrome') {
             updateConstraintsInChrome(connection, validConstraints, onStreamCallback, errorCallback);
@@ -374,8 +384,6 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
             // for Firefox
             try {
                 connection.applyConstraints(validConstraints);
-                connection.extra.closed = true;
-                connection.updateExtraData();
             } catch (error) {
                 logErr('Apply Constraints ERROR: ', error);
                 errorCallback(error);
@@ -383,7 +391,7 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
         };
         
         if(connection.isInitiator) {
-            connection.extra.constraints = validConstraints;
+            connection.extra.constraints = { ...validConstraints };
             connection.updateExtraData();
         }
     },
@@ -405,6 +413,10 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
     getResolutions: () => RESOLUTIONS.slice().reverse(),
     getDefaultResolution: () => _.find(RESOLUTIONS, { default: true }),
 
+    getFrameRates: () => FRAME_RATES.slice(),
+    getDefaultMaxFrameRate: () => _.find(FRAME_RATES, { default: 'max' }),
+    getDefaultMinFrameRate: () => _.find(FRAME_RATES, { default: 'min' }),
+
     refreshConnection: (errorCallback=()=>{}) => {
         log('Refresh Connection');
         renegotiateConnection(connection, onStreamCallback, errorCallback);
@@ -421,7 +433,7 @@ const updateConstraintsInChrome = (connection, constraints, onStreamCallback, er
         });
     });
     
-    connection.mediaConstraints = constraints; // update constraints
+    connection.mediaConstraints = { ...connection.mediaConstraints, ...constraints }; // update constraints
 
     renegotiateConnection(connection, onStreamCallback, errorCallback);
 };
@@ -436,12 +448,32 @@ const filterConstraintsByBrowser = (connection, constraints) => {
     let supports = navigator.mediaDevices.getSupportedConstraints();
     log('MediaConstraints support: ', supports);
 
+    if( _.isObject(connection.mediaConstraints.video) ) {
+        if(isFirefox) {
+            filteredConstraints.video = { ...connection.mediaConstraints.video };
+        } else {
+            filteredConstraints.video.mandatory = { ...connection.mediaConstraints.video.mandatory };
+            connection.mediaConstraints.video.optional.length > 0 
+                && filteredConstraints.video.optional.push({ ...connection.mediaConstraints.video.optional[0] });
+        }
+    }
+    if( _.isObject(connection.mediaConstraints.audio) ) {
+        if(isFirefox) {
+            filteredConstraints.audio = { ...connection.mediaConstraints.audio };
+        } else {
+            filteredConstraints.audio.mandatory = { ...connection.mediaConstraints.audio.mandatory };
+            connection.mediaConstraints.audio.optional.length > 0 
+                && filteredConstraints.audio.optional.push({ ...connection.mediaConstraints.audio.optional[0] });
+        }
+    }
+    log('constraints before update: ', filteredConstraints);
+
     // if safari or opera etc.
     if(!isChrome && !isFirefox) return { video: true, audio: true };
 
     /* Video Constraints */
     if (supports.width && constraints.width) {
-        if(isFirefox) filteredConstraints.video.width = constraints.width;
+        if(isFirefox) filteredConstraints.video.width = constraints.width || connection.video.width;
         else {
             filteredConstraints.video.mandatory.minWidth = constraints.width;
             filteredConstraints.video.mandatory.maxWidth = constraints.width;
@@ -458,14 +490,19 @@ const filterConstraintsByBrowser = (connection, constraints) => {
         if(isFirefox) filteredConstraints.video.aspectRatio = constraints.aspectRatio;
         else filteredConstraints.video.mandatory.minAspectRatio = constraints.aspectRatio;
     }
-    if(supports.frameRate && constraints.frameRate) {
+    if(supports.frameRate && constraints.minFrameRate) {
         if(isFirefox) {
-            filteredConstraints.video.frameRate = {
-                min: constraints.minFrameRate,
-                max: constraints.maxFrameRate, 
-            };
+            !filteredConstraints.video.frameRate && (filteredConstraints.video.frameRate = {});
+            filteredConstraints.video.frameRate.min = constraints.minFrameRate;
         } else {
             filteredConstraints.video.mandatory.minFrameRate = constraints.minFrameRate;
+        };
+    }
+    if(supports.frameRate && constraints.maxFrameRate) {
+        if(isFirefox) {
+            !filteredConstraints.video.frameRate && (filteredConstraints.video.frameRate = {});
+            filteredConstraints.video.frameRate.max = constraints.maxFrameRate;
+        } else {
             filteredConstraints.video.mandatory.maxFrameRate = constraints.maxFrameRate;
         };
     }
@@ -513,8 +550,9 @@ const leaveConnection = (connection) => {
 
 const renegotiateConnection = (connection, onStreamCallback, errorCallback) => {
     let oldStream = connection.attachStreams[0];
+    navigator.getUserMedia = navigator.webkitGetUserMedia || navigator.getUserMedia || navigator.mozGetUserMedia;
 
-    navigator.webkitGetUserMedia(connection.mediaConstraints, function(newStream) {
+    navigator.getUserMedia(connection.mediaConstraints, function(newStream) {
         
         try {
             connection.attachStreams = [newStream];
@@ -529,7 +567,9 @@ const renegotiateConnection = (connection, onStreamCallback, errorCallback) => {
     
             connection.getAllParticipants().forEach(function (pid) {
                 if (`${pid}` != `${connection.userid}`) {
+                    connection.dontAttachStream = true;
                     connection.renegotiate(pid);
+                    connection.dontAttachStream = false;
                 }
             });
         } catch(error) {

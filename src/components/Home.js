@@ -397,7 +397,7 @@ class Home extends Component {
     _onStream(e, id, constraints) {
         const { stream, userid, type } = e;
         
-        c.log(userid+' receives on Stream. src: ', URL.createObjectURL(stream));
+        // c.log(userid+' receives on Stream. src: ', URL.createObjectURL(stream));
 
         this._updateTabConfig(id, { 
             srcObject: stream,
@@ -415,8 +415,8 @@ class Home extends Component {
         let closedIndex = _.findIndex(this.state.tabs, { id });
 
         this.setState({ tabIndex: closedIndex }, ()=> setTimeout(()=>{
-            let tab = _.find(this.state.tabs, { id });
-            tab && alert(receiverId + ': session is closed by: '+e.userid);
+            let tabConfig = _.find(this.state.tabs, { id });
+            tabConfig && toast('Monitor stream is closed or restarted for '+e.userid, { type: 'info', autoClose: 6000 });
         }, 0));
     }
 

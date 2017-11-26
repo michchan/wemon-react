@@ -22,6 +22,9 @@ class Monitor extends Component {
                   showCopyMonitorIdIcon: false,
                   resolutions: this.rtc.userEventHandlers.getResolutions() || [],
                   resolution: this.rtc.userEventHandlers.getDefaultResolution(),
+                  frameRates: this.rtc.userEventHandlers.getFrameRates() || [],
+                  minFrameRate: this.rtc.userEventHandlers.getDefaultMinFrameRate(),
+                  maxFrameRate: this.rtc.userEventHandlers.getDefaultMaxFrameRate(),
                   remoteConstraints: {},
             };
 
@@ -47,15 +50,22 @@ class Monitor extends Component {
       }
 
       render() {
-            const { resolution, remoteConstraints: rC } = this.state;
+            const { resolution, remoteConstraints:rC, minFrameRate, maxFrameRate } = this.state;
             const isChrome = this.connection.DetectRTC.browser.name === 'Chrome';
             const isBroadcast = this.connection.isInitiator || this.props.sessionType === 'broadcast';
             let remoteResolution;
+            let remoteMinFrameRate;
+            let remoteMaxFrameRate;
 
-            if( !_.isEmpty(rC) ){
+            if( !_.isEmpty(rC) && _.isObject(rC.video) ){ // Video Constraints
                   const remoteWidth = isChrome? rC.video.mandatory.maxWidth : rC.video.width;
                   const remoteHeight = isChrome? rC.video.mandatory.maxHeight : rC.video.height;
                   remoteResolution = _.find(this.state.resolutions, { width: remoteWidth, height: remoteHeight });
+
+                  const remoteMinFps = isChrome? rC.video.mandatory.minFrameRate : rC.video.frameRate.min;
+                  const remoteMaxFps = isChrome? rC.video.mandatory.maxFrameRate : rC.video.frameRate.max;
+                  remoteMinFrameRate = _.find(this.state.frameRates, { fps: remoteMinFps });
+                  remoteMaxFrameRate = _.find(this.state.frameRates, { fps: remoteMaxFps });
             }
 
             return (
@@ -85,6 +95,14 @@ class Monitor extends Component {
                                                 (remoteResolution && this.props.sessionType === 'view') && 
                                                 <h5>Resolution: &nbsp;&nbsp;{ `${remoteResolution.name} - ${remoteResolution.width} x ${remoteResolution.height}` }</h5> 
                                           }
+                                          { 
+                                                (remoteMinFrameRate && this.props.sessionType === 'view') && 
+                                                <h5>Minimum Frame Rate: &nbsp;&nbsp;{ `${remoteMinFrameRate.name} - ${remoteMinFrameRate.fps}` }</h5> 
+                                          }
+                                          { 
+                                                (remoteMaxFrameRate && this.props.sessionType === 'view') && 
+                                                <h5>Maximum Frame Rate: &nbsp;&nbsp;{ `${remoteMaxFrameRate.name} - ${remoteMaxFrameRate.fps}` }</h5> 
+                                          }
                                     </div>
                                     <div className='Monitor__config-container'>
                                           <FormGroup>
@@ -110,6 +128,8 @@ class Monitor extends Component {
                                                       </DropdownButton>
                                                 </FormGroup>
                                           }
+                                          { this._renderSelectFrameRates('min', isBroadcast) }
+                                          { this._renderSelectFrameRates('max', isBroadcast) }
                                     </div>
                               </div>
                               <div className='Monitor__video-col col-md-8'>
@@ -125,6 +145,29 @@ class Monitor extends Component {
                         </div>
                   </div>
             );
+      }
+
+      _renderSelectFrameRates(mode = 'min', isBroadcast = false) {
+            const title = mode === 'min'? 'Minimum': 'Maximum';
+            const frameRate = this.state[`${mode}FrameRate`];
+
+            if(isBroadcast)
+                  return (
+                        <FormGroup>
+                              <ControlLabel>{title} Frame Rate (fps): &nbsp;</ControlLabel>
+                              <DropdownButton bsStyle={'default'} id={`${mode}FrameRateSelect`} 
+                                    title={`${frameRate.name} - ${frameRate.fps}`} 
+                                    onSelect={ (evtKey, e) => this._onSelectFrameRate(mode, evtKey, e) }
+                              >
+                                    {(()=> this.state.frameRates.map((fr, index) => (
+                                          <MenuItem eventKey={fr.name} key={index}>
+                                                { frameRate.name === fr.name && <b>{fr.name} - {fr.fps}</b> } 
+                                                { frameRate.name !== fr.name && `${fr.name} - ${fr.fps}` }
+                                          </MenuItem>
+                                    )))()}
+                              </DropdownButton>
+                        </FormGroup>
+                  );
       }
       
       _onRefresh() {
@@ -191,11 +234,12 @@ class Monitor extends Component {
             }
             if(nextProps.remoteConstraints && !_.isEqual(nextProps.remoteConstraints, this.state.remoteConstraints)) {
                   this.setState({ remoteConstraints: nextProps.remoteConstraints });
+                  c.log('props update remote constraints: ', nextProps.remoteConstraints);
             };
       }
 
       _onCopy() {
-            const msg = 'Copied! : '+this.props.monitorId;
+            const msg = 'Copied : '+this.props.monitorId + ' !!';
             c.log(msg);
             this.props.toast && this.props.toast(msg, {
                   type: 'info',
@@ -209,13 +253,33 @@ class Monitor extends Component {
             let resolution = _.find(this.state.resolutions, { name: eventKey });
             this.rtc.userEventHandlers.applyConstraints(
                   { width: resolution.width, height: resolution.height }, 
-                  ()=>this.props.toast && this.props.toast('Error: Update Resolution or this resolution is not supported.', {
+                  ()=>this.props.toast && this.props.toast('Error: Cannot update Resolution or this resolution is not supported.', {
                         type: 'error',
-                        autoClose: 7000
+                        autoClose: 5000
                   })
             );
-            this.setState({ resolution });            
+            this.setState({ resolution });         
       }
+
+      _onSelectFrameRate(mode='min', eventKey, e) {
+            c.log('Selected '+mode+' frame rate: '+ eventKey);
+            this.refs.video.pause();
+            let constraints = {}, state = {};
+
+            let selectedframeRate = _.find(this.state.frameRates, { name: eventKey });
+            constraints[`${mode}FrameRate`] = selectedframeRate.fps;
+            state[`${mode}FrameRate`] = selectedframeRate;
+
+            this.rtc.userEventHandlers.applyConstraints(
+                  constraints, 
+                  ()=>this.props.toast && this.props.toast('Error: Cannot update Frame Rate or this Frame Rate is not supported.', {
+                        type: 'error',
+                        autoClose: 5000
+                  })
+            );
+            this.setState({ ...state }); 
+      }
+
 
       _onExtraDataUpdate(e) {
             const userId = e.userid;
@@ -224,20 +288,35 @@ class Monitor extends Component {
 
             if(extra.constraints && (!this.connection.isInitiator || this.props.sessionType !== 'broadcast')) {
                   if( !_.isEqual(extra.constraints, this.state.remoteConstraints)) {
+                        c.log('**Extra update remote constraints: ', extra.constraints);
                         const eC = extra.constraints;
                         const rC = { ...this.state.remoteConstraints };
                         this.setState({ remoteConstraints: extra.constraints });                      
 
-                        if( !_.isEmpty(rC) ) {
+                        if( (!_.isEmpty(rC) && _.isObject(rC.video)) && (!_.isEmpty(eC) && _.isObject(eC.video)) ) { // Video Constraints
                               const oldWidth = isChrome? rC.video.mandatory.maxWidth : rC.video.width;
                               const oldHeight = isChrome? rC.video.mandatory.maxHeight : rC.video.height;
                               const newWidth = isChrome? eC.video.mandatory.maxWidth : eC.video.width;
                               const newHeight = isChrome? eC.video.mandatory.maxHeight : eC.video.height;
+
+                              const oldMinFps = isChrome? rC.video.mandatory.minFrameRate : rC.video.frameRate.min;
+                              const oldMaxFps = isChrome? rC.video.mandatory.maxFrameRate : rC.video.frameRate.max;
+                              const newMinFps = isChrome? eC.video.mandatory.minFrameRate : eC.video.frameRate.min;
+                              const newMaxFps = isChrome? eC.video.mandatory.maxFrameRate : eC.video.frameRate.max;
       
                               if(oldWidth !== newWidth || oldHeight !== newHeight) {
-                                    this.props.toast && toast(`Remote resolution is changed by ${userId}(user ID) to ${newWidth} x ${newHeight}`, {
+                                    let newRes = _.find(this.state.resolutions, { width: newWidth, height: newHeight });
+                                    this.props.toast && toast(`Remote resolution is changed to ${newRes.name} - ${newWidth}x${newHeight}`, {
                                           type: 'info',
-                                          autoClose: 5000,
+                                          autoClose: 3000,
+                                    });
+                              };
+                              if(+oldMinFps !== +newMinFps || +oldMaxFps !== +newMaxFps) {
+                                    let newMin = _.find(this.state.frameRates, { fps: +newMinFps });
+                                    let newMax = _.find(this.state.frameRates, { fps: +newMaxFps });
+                                    this.props.toast && toast(`Remote frame rate is changed ! Min: ${newMin.fps}, Max: ${newMax.fps}`, {
+                                          type: 'info',
+                                          autoClose: 3000,
                                     });
                               };
                         }
