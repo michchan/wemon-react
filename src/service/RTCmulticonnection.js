@@ -3,21 +3,21 @@ import _ from 'lodash';
 
 import { 
     logRTCMultiConnectionEvent as log, 
-    logRTCMultiConnectionError as logErr,
+    logRTCMultiConnectionError,
     logRTCMultiConnectionSocketEvent as logSocket,
-    logErrorEvent,
+    logErrorEvent as logErr,
 } from './log';
 
 const RESOLUTIONS = [
     { name: 'QQVGA', width: 160, height: 120 },
     { name: 'QCIF', width: 176, height: 144 },
-    { name: 'QVGA', width: 320, height: 240, default: true },
+    { name: 'QVGA', width: 320, height: 240 },
     { name: 'CIF', width: 352, height: 288 },
     { name: '360p(nHD)', width: 640, height: 360 },
-    { name: 'VGA', width: 640, height: 480 },
+    { name: 'VGA', width: 640, height: 480, default: true },
     { name: 'SVGA', width: 800, height: 600 },
     { name: '720p(HD)', width: 1280, height: 720 },
-];
+]; 
 const FRAME_RATES = [
     { name: 'Poor', fps: 10, default: 'min' },
     { name: 'Very Low', fps: 15 },
@@ -33,8 +33,11 @@ var RTCMultiConnection = window.RTCMultiConnection; // the class
 
 export default class RTCMultiConnectionSession {
 
-    constructor(connectedSocketCallback=()=>{}, onStreamCallback=()=>{}, onSessionClosedCallback=()=>{}, onMuteOrUnmuteCallback=()=>{}, onExtraDataUpdatedCallback=()=>{}, sessionId) {
+    constructor(connectedSocketCallback=()=>{}, onStreamCallback=()=>{}, onSessionClosedCallback=()=>{}, onMuteOrUnmuteCallback=()=>{}, captureUserMediaErrorCallback=()=>{}, onExtraDataUpdatedCallback=()=>{}, sessionId) {
         if(!RTCMultiConnection) return log('RTCMultiConnection undefined');
+
+        if(sessionId) this.connection = new RTCMultiConnection(sessionId);
+        else this.connection = new RTCMultiConnection();
 
         // bind this for later usage
         this.connectedSocketCallback = connectedSocketCallback;
@@ -43,9 +46,7 @@ export default class RTCMultiConnectionSession {
         this.onExtraDataUpdatedCallback = onExtraDataUpdatedCallback;
         this.sessionId = sessionId;
         this.onMuteOrUnmuteCallback = onMuteOrUnmuteCallback;
-
-        if(sessionId) this.connection = new RTCMultiConnection(sessionId);
-        else this.connection = new RTCMultiConnection();
+        this.captureUserMediaErrorCallback = captureUserMediaErrorCallback;
         
         this.refs = {
             video: null,
@@ -61,17 +62,13 @@ export default class RTCMultiConnectionSession {
         this.userEventHandlers = _getUserEventHandlers(this.connection, this.refs, this.buffer, onStreamCallback);
         
         _setConnectionParams(this.connection);
-        _setConnectionConstraint(this.connection);
+        this.connection.mediaConstraints = _getDefaultConnectionConstraint(this.connection);
         _setSocketConnection(this.connection, connectedSocketCallback);
-        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback, onMuteOrUnmuteCallback);
+        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback, onMuteOrUnmuteCallback, captureUserMediaErrorCallback);
     
         log('Constructed connection object with default params set');
         log('Connection object: with session id: '+sessionId, this.connection);
     };
-
-    setExtraDataUpdateHandler(handler) {
-        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, this.onStreamCallback, this.onSessionClosedCallback, handler, this.onMuteOrUnmuteCallback);
-    }
 
 } // class RTCMultiConnectionSession
 
@@ -87,9 +84,10 @@ const _setConnectionParams = (connection) => {
     connection.socketMessageEvent = 'wemon-msg-event';
     connection.beforeAddingStream = (stream, peer) => stream;
     connection.extra.muted = { video: false, audio: false };
+    connection.enableLogs = true;
 };
 
-const _setConnectionConstraint = (connection) => {
+const _getDefaultConnectionConstraint = (connection) => {
     let defaultConstraints = {
         width: _getUserEventHandlers(connection).getDefaultResolution().width,
         height: _getUserEventHandlers(connection).getDefaultResolution().height,
@@ -103,7 +101,7 @@ const _setConnectionConstraint = (connection) => {
         aspectRatio: 1.2,
     };
     
-    connection.mediaConstraints = filterConstraintsByBrowser(connection, defaultConstraints);
+    return filterConstraintsByBrowser(connection, defaultConstraints);
 };
 
 const _setSocketConnection = (connection, connectedSocketCallback) => {
@@ -124,9 +122,10 @@ const _setSocketConnection = (connection, connectedSocketCallback) => {
 };
 
 const _setConnectionEventHandler = (connection, userEventHandlers, refs, buffer, onStreamCallback = ()=>{}, onSessionClosedCallback = ()=>{}, onExtraDataUpdatedCallback = ()=>{}
-, onMuteOrUnmuteCallback=()=>{}) => {
+, onMuteOrUnmuteCallback=()=>{}, captureUserMediaErrorCallback) => {
     let handlers = _getConnectionEventHandlers(connection, refs, buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback, onMuteOrUnmuteCallback);
 
+    connection.captureUserMediaErrorCallback = captureUserMediaErrorCallback || ((e, constraints)=>logErr('captureUserMedia error', e, constraints));
     connection.onstream = handlers.onStream;
     connection.onstreamended = handlers.onStreamEnded;
     connection.onleave = handlers.onLeave;
@@ -136,6 +135,7 @@ const _setConnectionEventHandler = (connection, userEventHandlers, refs, buffer,
     connection.onunmute = handlers.onUnmute;
     connection.onclose = handlers.onclose;
     connection.onleave = handlers.onleave;
+    connection.onMediaError = handlers.onMediaError;
 };
 
 const _socketHandlers = (connection, socket) => ({
@@ -203,26 +203,28 @@ const _socketHandlers = (connection, socket) => ({
 const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback, onMuteOrUnmuteCallback) => ({
 
     onStream: (event) => {
-        log(`######### ${connection.userid} onStream #########`, event, refs.video, event.stream);
-        log(event);
+        log(`######### ${connection.userid} onStream ${event.stream.id} #########`);
+        log('event: ', event, 'refs: ', refs.video, 'stream', event.stream);
 
-        if (connection.isInitiator && event.type !== 'local') {
-            return log('Broadcaster receives local stream');
+        if (connection.isInitiator && event.type !== 'local') { // broadcast && remote
+            log(`  ######### Broadcaster receives remote stream.`);
+            return log('Broadcaster receives remote stream');
         };
-
-        if(!refs.video) logErr('onStream: No video Ref');
-
-        connection.isUpperUserLeft = false;
+        // if(!refs.video) logErr('onStream: No video Ref');
 
         connection.isUpperUserLeft = false;
-
+        connection.latestStreamId = event.stream.id;
+        
         /* Callback for setting video src */
         onStreamCallback(event, connection.mediaConstraints); // callback for setState src, set video srcObject or src here
         onExtraDataUpdatedCallback(event);
+        
 
-        if (connection.isInitiator == false && event.type === 'remote') {
+        if (connection.isInitiator == false && event.type === 'remote') { //viewer && remote
+            log(`  ######### Viewer receives remote stream.`);
             // he is merely relaying the media
             connection.dontCaptureUserMedia = true;
+
             connection.attachStreams = [event.stream];
             connection.sdpConstraints.mandatory = {
                 OfferToReceiveAudio: false,
@@ -239,8 +241,7 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
                         peer.getLocalStreams().forEach(function (localStream) {
                             peer.removeStream(localStream);
                         });
-                        log(event.stream);
-                        log(peer);
+                        log('Peer to relay to: ', peer, ' stream: ', event.stream);
                         event.stream.getTracks().forEach(function (track) {
                             if(typeof peer.addTrack === 'function') peer.addTrack(track, event.stream);
                             else logErr('peer.addTrack is not a function');
@@ -324,23 +325,44 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
 
     onExtraDataUpdated: function(e) {
         log(connection.userid + ' received extra data updated from: '+ e.userid, e.extra);
+
+        // if(!!e.extra.recapturedStreamEvent) {
+        //     log(connection.userid + ' received recapturedStreamEvent from: '+ e.userid, e.extra.recapturedStreamEvent);
+        //     if(connection.userid !== e.userid) { // make sure it is received by remote user
+        //         let streamEvent = e.extra.recapturedStreamEvent; 
+        //         streamEvent.type = 'remote';
+        //         streamEvent.stream.type = 'remote';
+        //         connection.onstream(streamEvent); // update local stream at viewers' side
+        //     };
+        // };
+
         onExtraDataUpdatedCallback(e);
     },
 
     onMute: function(e) {
+        if( _.isEqual(connection.lastMuteEvent, e) && connection.lastMuteType !== e.muteType ) return;
+
         log(connection.userid + ' received onMute event: ', e);
         if(!connection.isInitiator) return onMuteOrUnmuteCallback('mute', e); //e.muteType
 
         connection.extra.muted[e.muteType] = true;
         connection.updateExtraData();
+
+        connection.lastMuteEvent = e;
+        connection.lastMuteType = e.muteType;
     },
 
     onUnmute: function(e) {
+        if( _.isEqual(connection.lastUnmuteEvent, e) && connection.lastUnmuteType !== e.unmuteType ) return;
+
         log(connection.userid + ' received onUnmute event: ', e);
         if(!connection.isInitiator) return onMuteOrUnmuteCallback('unmute', e); //e.unmuteType
 
         connection.extra.muted[e.unmuteType] = false;
         connection.updateExtraData();
+
+        connection.lastUnmuteEvent = e;
+        connection.lastUnmuteType = e.unmuteType;
     },
 
     onleave: (e) => {
@@ -350,6 +372,12 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
     onclose: (e) => {
         log(connection.userid + ' received Broadcaster closed the monitor: '+e.userid);
     },
+
+    onMediaError: (err, constraints) => {
+        logErr('onMediaError: ', err, 'Constraints: ', constraints);
+        connection.captureUserMediaErrorCallback(err, constraints);
+    },
+    
 });
 
 const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
@@ -400,8 +428,8 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
             connection = null;
     },
 
-    applyConstraints: (constraints, errorCallback=()=>{}) => {
-        let validConstraints = filterConstraintsByBrowser(connection, constraints);
+    applyConstraints: (constraints, errorCallback=()=>{}, filtered = false) => {
+        let validConstraints = filtered? constraints : filterConstraintsByBrowser(connection, constraints);
         log(connection.userid + ' Apply Constraints, ', validConstraints, 'last Constraints, ', connection.mediaConstraints);
 
         if(connection.DetectRTC.browser.name === 'Chrome') {
@@ -422,16 +450,21 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
         }
     },
 
-    muteOrUnmuteStream: (mute = true, type = 'audio', errorCallback=()=>{}) => {
-        let streamEvent = connection.streamEvents.selectFirst();
-        if(!streamEvent) {
-            errorCallback();
-            return logErr('muteOrUnmuteStream: streamEvent undefined');
-        }
+    muteOrUnmuteStream: (mute = true, type = 'audio', errorCallback=()=>{}, srcObject) => {
         try {
-            log(connection.userid + mute? ' Mute stream ': ' Unmute stream', streamEvent);
-            mute && streamEvent.stream.mute(type);
-            !mute && streamEvent.stream.unmute(type);
+            log('muteOrUnmuteStream by '+connection.userid);
+            
+            let streamEvent = connection.streamEvents.selectFirst();
+
+            _.forEach(connection.streamEvents, (props) => {
+                if(typeof props !== 'object') return;
+
+                let event = props;
+                log('each stream event ', event);                
+
+                mute && event.stream.mute(type);
+                ! mute && event.stream.unmute(type);
+            });
         } catch (error) {
             logErr('muteOrUnmuteStream ERROR: ', error);
             errorCallback(error);
@@ -454,6 +487,8 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
         log('Rejoin Connection');
         connection.rejoin(connection.connectionDescription);
     },
+
+    getDefaultConstraints: () => _getDefaultConnectionConstraint(connection),
 
 });
 
@@ -574,36 +609,50 @@ const leaveConnection = (connection) => {
 }
 
 const renegotiateConnection = (connection, onStreamCallback, errorCallback) => {
-    let oldStream = connection.attachStreams[0];
-    navigator.getUserMedia = navigator.webkitGetUserMedia || navigator.getUserMedia || navigator.mozGetUserMedia;
+    connection.captureUserMediaErrorCallback = errorCallback; // bind user event error callback to onMediaError
 
-    navigator.getUserMedia(connection.mediaConstraints, function(newStream) {
-        
+    if(connection.attachStreams.length !==0 ) {
+        connection.attachStreams.forEach((oldStream) => {
+            oldStream.stop();
+        });
+    };
+
+    navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+
+    connection.captureUserMedia(function(newStream){
         try {
             connection.attachStreams = [newStream];
+
+            var video = document.createElement('video');
+            video.src = URL.createObjectURL(newStream);
+            video.muted = true;
             
-            log('New Local Stream: ', newStream);
-            onStreamCallback({ stream: newStream, userid: connection.userid }, connection.mediaConstraints); // attach srcObject to video tag and play stream
-    
-            setTimeout(function() {
-                oldStream.stop();
-                // re-enable any button here
-            }, 3000);
-    
+            let streamEvent = {
+                type: 'local',
+                stream: newStream,
+                streamid: newStream.id,
+                userid: connection.userid,
+                mediaElement: video // media element is not needed for our onstream event in our case.
+            };
+            connection.latestStreamId = newStream.id; // for muting use
+
+            log('New Local stream event from connection.captureUserMedia: ', streamEvent);   
+            log('streamEvents before new stream: ', connection.streamEvents);
+            connection.onstream(streamEvent);
+            connection.streamEvents[streamEvent.id] = streamEvent;
+            
             connection.getAllParticipants().forEach(function (pid) {
                 if (`${pid}` != `${connection.userid}`) {
+                    log('RENEGOTIATE with '+pid);
                     connection.dontAttachStream = true;
                     connection.renegotiate(pid);
                     connection.dontAttachStream = false;
                 }
             });
+
         } catch(error) {
             logErr('Renegotiation ERROR: ', error);
             errorCallback(error);
         }
-
-    }, function(error) {
-        logErr('getUserMedia ERROR: ', error);
-        errorCallback(error);
-    });
+    }, connection.mediaConstraints);
 }
