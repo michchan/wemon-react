@@ -353,6 +353,7 @@ class Home extends Component {
             ()=> this._updateTabConfig(sessionId, { socketIsReady: true }),
             (e, constraints)=> this._onStream(e, sessionId, constraints),
             (e, receiverId)=> this._onSessionClosed(e, receiverId, sessionId),
+            (type, e) => this._onMuteOrUnmute(sessionId, type, e),
         );
 
         let monitorId;
@@ -382,6 +383,10 @@ class Home extends Component {
             minFrameRate: createSessionType === 'view'? null : rtcSession.userEventHandlers.getDefaultMinFrameRate(),
             maxFrameRate: createSessionType === 'view'? null : rtcSession.userEventHandlers.getDefaultMaxFrameRate(),
             remoteConstraints: {},
+            muteStreamAudio: false,
+            muteStreamVideo: false,
+            remoteStreamAudioMuted: false,
+            remoteStreamVideoMuted: false,
         };
         tabConfig.restartSession = (monitorId)=>this._restartSession(sessionId, tabConfig, monitorId);
 
@@ -397,6 +402,7 @@ class Home extends Component {
             ()=> this._updateTabConfig(sessionId, { socketIsReady: true }),
             (e, constraints)=> this._onStream(e, sessionId, constraints),
             (e, receiverId)=> this._onSessionClosed(e, receiverId, sessionId),
+            (type, e) => this._onMuteOrUnmute(sessionId, type, e),
         );
 
         if(tabConfig.sessionType === 'broadcast') {
@@ -434,6 +440,42 @@ class Home extends Component {
             let tabConfig = _.find(this.state.tabs, { id });
             tabConfig && toast('Monitor stream id: '+e.userid+' is closed or restarted by remote user', { type: 'error', autoClose: 6000 });
         }, 0));
+    }
+
+    _onMuteOrUnmute(sid, type, e) {
+        c.log('on mute or unmute', type, e);
+        if (type === 'mute') {
+            if (e.muteType === 'video') {
+                this._updateTabConfig(sid, {remoteStreamVideoMuted: true});
+                this._toastPreventingMultiple('Monitor broadcast video is muted.', {
+                    type: 'info',
+                    autoClose: 4000
+                });
+            }
+            if (e.muteType === 'audio') {
+                this._updateTabConfig(sid, {remoteStreamAudioMuted: true});
+                this._toastPreventingMultiple('Monitor broadcast audio is muted.', {
+                    type: 'info',
+                    autoClose: 4000
+                });
+            }
+        }
+        if (type === 'unmute') {
+            if (e.unmuteType === 'video') {
+                this._updateTabConfig(sid, {remoteStreamVideoMuted: false});
+                this._toastPreventingMultiple('Monitor broadcast video is unmuted.', {
+                    type: 'info',
+                    autoClose: 4000
+                });
+            }
+            if (e.unmuteType === 'audio') {
+                this._updateTabConfig(sid, {remoteStreamAudioMuted: false});
+                this._toastPreventingMultiple('Monitor broadcast audio is unmuted.', {
+                    type: 'info',
+                    autoClose: 4000
+                });
+            }
+        }
     }
 
     _updateTabConfig(id, config) {

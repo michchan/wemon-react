@@ -11,19 +11,19 @@ import {
 const RESOLUTIONS = [
     { name: 'QQVGA', width: 160, height: 120 },
     { name: 'QCIF', width: 176, height: 144 },
-    { name: 'QVGA', width: 320, height: 240 },
+    { name: 'QVGA', width: 320, height: 240, default: true },
     { name: 'CIF', width: 352, height: 288 },
-    { name: '360p(nHD)', width: 640, height: 360, default: true },
+    { name: '360p(nHD)', width: 640, height: 360 },
     { name: 'VGA', width: 640, height: 480 },
     { name: 'SVGA', width: 800, height: 600 },
     { name: '720p(HD)', width: 1280, height: 720 },
 ];
 const FRAME_RATES = [
-    { name: 'Poor', fps: 10 },
-    { name: 'Very Low', fps: 15, default: 'min' },
-    { name: 'Low', fps: 20 },
+    { name: 'Poor', fps: 10, default: 'min' },
+    { name: 'Very Low', fps: 15 },
+    { name: 'Low', fps: 20, default: 'max' },
     { name: 'Acceptable', fps: 25 },
-    { name: 'Normal', fps: 30, default: 'max' },
+    { name: 'Normal', fps: 30 },
     { name: 'Very High', fps: 45 },
     { name: 'Excellent', fps: 60 },
 ];
@@ -33,7 +33,7 @@ var RTCMultiConnection = window.RTCMultiConnection; // the class
 
 export default class RTCMultiConnectionSession {
 
-    constructor(connectedSocketCallback=()=>{}, onStreamCallback=()=>{}, onSessionClosedCallback=()=>{}, onExtraDataUpdatedCallback=()=>{}, sessionId) {
+    constructor(connectedSocketCallback=()=>{}, onStreamCallback=()=>{}, onSessionClosedCallback=()=>{}, onMuteOrUnmuteCallback=()=>{}, onExtraDataUpdatedCallback=()=>{}, sessionId) {
         if(!RTCMultiConnection) return log('RTCMultiConnection undefined');
 
         // bind this for later usage
@@ -42,6 +42,7 @@ export default class RTCMultiConnectionSession {
         this.onSessionClosedCallback = onSessionClosedCallback;
         this.onExtraDataUpdatedCallback = onExtraDataUpdatedCallback;
         this.sessionId = sessionId;
+        this.onMuteOrUnmuteCallback = onMuteOrUnmuteCallback;
 
         if(sessionId) this.connection = new RTCMultiConnection(sessionId);
         else this.connection = new RTCMultiConnection();
@@ -62,14 +63,14 @@ export default class RTCMultiConnectionSession {
         _setConnectionParams(this.connection);
         _setConnectionConstraint(this.connection);
         _setSocketConnection(this.connection, connectedSocketCallback);
-        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback);
+        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback, onMuteOrUnmuteCallback);
     
         log('Constructed connection object with default params set');
         log('Connection object: with session id: '+sessionId, this.connection);
     };
 
     setExtraDataUpdateHandler(handler) {
-        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, this.onStreamCallback, this.onSessionClosedCallback, handler);
+        _setConnectionEventHandler(this.connection, this.userEventHandlers, this.refs, this.buffer, this.onStreamCallback, this.onSessionClosedCallback, handler, this.onMuteOrUnmuteCallback);
     }
 
 } // class RTCMultiConnectionSession
@@ -85,6 +86,7 @@ const _setConnectionParams = (connection) => {
     connection.socketURL = 'https://rtcmulticonnection.herokuapp.com:443/';
     connection.socketMessageEvent = 'wemon-msg-event';
     connection.beforeAddingStream = (stream, peer) => stream;
+    connection.extra.muted = { video: false, audio: false };
 };
 
 const _setConnectionConstraint = (connection) => {
@@ -121,14 +123,17 @@ const _setSocketConnection = (connection, connectedSocketCallback) => {
     });
 };
 
-const _setConnectionEventHandler = (connection, userEventHandlers, refs, buffer, onStreamCallback = ()=>{}, onSessionClosedCallback = ()=>{}, onExtraDataUpdatedCallback = ()=>{}) => {
-    let handlers = _getConnectionEventHandlers(connection, refs, buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback);
+const _setConnectionEventHandler = (connection, userEventHandlers, refs, buffer, onStreamCallback = ()=>{}, onSessionClosedCallback = ()=>{}, onExtraDataUpdatedCallback = ()=>{}
+, onMuteOrUnmuteCallback=()=>{}) => {
+    let handlers = _getConnectionEventHandlers(connection, refs, buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback, onMuteOrUnmuteCallback);
 
     connection.onstream = handlers.onStream;
     connection.onstreamended = handlers.onStreamEnded;
     connection.onleave = handlers.onLeave;
     connection.onEntireSessionClosed = handlers.onEntireSessionClosed;
     connection.onExtraDataUpdated = handlers.onExtraDataUpdated;
+    connection.onmute = handlers.onMute;
+    connection.onunmute = handlers.onUnmute;
     connection.onclose = handlers.onclose;
     connection.onleave = handlers.onleave;
 };
@@ -195,7 +200,7 @@ const _socketHandlers = (connection, socket) => ({
 
 }); // end _socketHandlers
 
-const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback) => ({
+const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback, onSessionClosedCallback, onExtraDataUpdatedCallback, onMuteOrUnmuteCallback) => ({
 
     onStream: (event) => {
         log(`######### ${connection.userid} onStream #########`, event, refs.video, event.stream);
@@ -318,8 +323,24 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
     },
 
     onExtraDataUpdated: function(e) {
-        // log(connection.userid + ' received extra data updated from: '+ e.userid, e.extra);
+        log(connection.userid + ' received extra data updated from: '+ e.userid, e.extra);
         onExtraDataUpdatedCallback(e);
+    },
+
+    onMute: function(e) {
+        log(connection.userid + ' received onMute event: ', e);
+        if(!connection.isInitiator) return onMuteOrUnmuteCallback('mute', e); //e.muteType
+
+        connection.extra.muted[e.muteType] = true;
+        connection.updateExtraData();
+    },
+
+    onUnmute: function(e) {
+        log(connection.userid + ' received onUnmute event: ', e);
+        if(!connection.isInitiator) return onMuteOrUnmuteCallback('unmute', e); //e.unmuteType
+
+        connection.extra.muted[e.unmuteType] = false;
+        connection.updateExtraData();
     },
 
     onleave: (e) => {
@@ -334,7 +355,7 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
 const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
 
     openOrJoin: (broadcastId) => {
-        log('openOrJoin broadcast');
+        log(connection.userid + ' openOrJoin broadcast');
 
         if (broadcastId.replace(/^\s+|\s+$/g, '').length <= 0) {
             alert('Please enter broadcast-id');
@@ -381,7 +402,7 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
 
     applyConstraints: (constraints, errorCallback=()=>{}) => {
         let validConstraints = filterConstraintsByBrowser(connection, constraints);
-        log('Apply Constraints, ', validConstraints, 'last Constraints, ', connection.mediaConstraints);
+        log(connection.userid + ' Apply Constraints, ', validConstraints, 'last Constraints, ', connection.mediaConstraints);
 
         if(connection.DetectRTC.browser.name === 'Chrome') {
             updateConstraintsInChrome(connection, validConstraints, onStreamCallback, errorCallback);
@@ -401,14 +422,16 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
         }
     },
 
-    muteOrUnmuteStream: (mute = true, errorCallback=()=>{}) => {
+    muteOrUnmuteStream: (mute = true, type = 'audio', errorCallback=()=>{}) => {
         let streamEvent = connection.streamEvents.selectFirst();
-        if(!streamEvent) return logErr('muteOrUnmuteStream: streamEvent undefined');
-
+        if(!streamEvent) {
+            errorCallback();
+            return logErr('muteOrUnmuteStream: streamEvent undefined');
+        }
         try {
-            log(mute? 'Mute stream ': 'Unmute stream', streamEvent);
-            mute && streamEvent.stream.mute('both');
-            !mute && streamEvent.stream.unmute('both');  
+            log(connection.userid + mute? ' Mute stream ': ' Unmute stream', streamEvent);
+            mute && streamEvent.stream.mute(type);
+            !mute && streamEvent.stream.unmute(type);
         } catch (error) {
             logErr('muteOrUnmuteStream ERROR: ', error);
             errorCallback(error);
