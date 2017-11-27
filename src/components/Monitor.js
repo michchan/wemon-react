@@ -30,7 +30,7 @@ class Monitor extends Component {
 
             if(this.props.sessionType === 'broadcast') this.refs.video.volume = 0; // Avoid making noise for broadcaster on start
 
-            this.rtc.setExtraDataUpdateHandler(this._onExtraDataUpdate.bind(this))
+            this.connection.onExtraDataUpdated = this._onExtraDataUpdate.bind(this);
       }
 
       componentWillReceiveProps(nextProps) {
@@ -101,8 +101,12 @@ class Monitor extends Component {
                                     <div className='Monitor__config-container'>
                                           <FormGroup>
                                                 <ButtonToolbar>
-                                                      <Button onClick={this._onRefresh.bind(this)}>Refresh Connection &nbsp;<i className="fa fa-refresh fa-2x"></i></Button>
-                                                      <Button onClick={this._onRestart.bind(this)}>Restart Session &nbsp;<i className="fa fa-circle-o-notch fa-2x"></i></Button>
+                                                      {<Button onClick={this._onRefresh.bind(this)}>
+                                                            { isBroadcast? 'Refresh':'Re-join' } Connection &nbsp;<i className="fa fa-refresh fa-2x Monitor__refresh-icon"></i>
+                                                      </Button>}
+                                                      {<Button onClick={this._onRestart.bind(this)}>
+                                                            { isBroadcast? 'Restart':'Restart New Viewing' } Session &nbsp;<i className="fa fa-circle-o-notch fa-2x Monitor__restart-icon"></i>
+                                                      </Button>}
                                                 </ButtonToolbar>
                                           </FormGroup>
                                           {
@@ -138,17 +142,24 @@ class Monitor extends Component {
                                                 muted={this.props.muted}
                                                 onVolumeChange={this._onVolumeChange.bind(this)}
                                           />
+                                          {  (()=>{
+                                                this.audioMuteBtnClassName = this.props.muteStreamAudio?'fa fa-volume-up fa-2x': 'fa fa-volume-off fa-2x';
+                                                this.videoMuteBtnClassName = this.props.muteStreamVideo?'fa fa-play fa-2x': "fa fa-pause fa-2x";
+                                          })() }
                                           {     isBroadcast &&
                                                 <ButtonGroup>
                                                       <Button onClick={this._onMuteRemote.bind(this, 'audio')} active={this.props.muteStreamAudio}>
-                                                      {this.props.muteStreamAudio? 'Unmute':'Mute'} Broadcast Audio &nbsp;&nbsp;<i className="fa fa-volume-off fa-2x"></i></Button>
+                                                      {this.props.muteStreamAudio? 'Unmute':'Mute'} Broadcast Audio &nbsp;&nbsp;<i className={ this.audioMuteBtnClassName } ></i></Button>
                                                       <Button onClick={this._onMuteRemote.bind(this, 'video')} active={this.props.muteStreamVideo}>
-                                                      {this.props.muteStreamVideo? 'Unmute':'Mute'} Broadcast Video &nbsp;&nbsp;<i className="fa fa-pause fa-2x"></i></Button>
+                                                      {this.props.muteStreamVideo? 'Unmute':'Mute'} Broadcast Video &nbsp;&nbsp;<i className={ this.videoMuteBtnClassName }></i></Button>
                                                 </ButtonGroup>
                                           }
                                           {
                                                 ! isBroadcast && 
                                                 <h4>Remote Stream: &nbsp; Audio muted: <b>{ `${this.props.remoteStreamAudioMuted}` }</b>, VIDEO muted: <b>{ `${this.props.remoteStreamVideoMuted}` }</b></h4>
+                                          }
+                                          {
+                                                // <p>(Bug: cannot mute/unmute (streamEvents not containing stream) after refresh connection)</p>
                                           }
                                     </div>
                               </div>
@@ -187,13 +198,14 @@ class Monitor extends Component {
                   autoClose: 5000
             });
 
-            if( !this.connection.isInitiator || this.props.sessionType === 'view' ) {
+            if( ! this.connection.isInitiator || this.props.sessionType === 'view' ) {
                   c.log('Refresh as a viewer');
                   this.rtc.userEventHandlers.rejoinConnection(errCallback);
                   return;
             };
             c.log('Refresh as a broadcaster');
             this.rtc.userEventHandlers.refreshConnection(errCallback);
+            this.props.updateTabConfig({ muteStreamVideo: false, muteStreamAudio: false });
       }
 
       _onRestart() {
@@ -205,9 +217,13 @@ class Monitor extends Component {
             });
             
             if( !this.connection.isInitiator || this.props.sessionType === 'view' ) {
-                  newMonitorId = prompt('New Session Id: ', `${this.props.monitorId}`);
+                  this.props.openModal();
+                  let newTitle = this.props.onViewerRestart(null, true).title || 'new Session';   
+                  let newMonitorId = this.props.onViewerRestart(null, true).monitorId;   
+                  this.props.updateTabConfig({ monitorId: newMonitorId, title: newTitle });
+
                   if(!newMonitorId) 
-                        return this.rtc.userEventHandlers.rejoinConnection(errCallback);
+                        return this.props.toast('Please enter a new monitor ID to view!!', { type: 'error', autoClose: 5000 });
             };
 
             this.rtc.userEventHandlers.leave();
@@ -239,25 +255,6 @@ class Monitor extends Component {
                         });
                   }
             }
-      }
-
-      _onMuteRemote(type) {
-            c.log('Mute broadcast stream type: '+type);
-            let muteBoolean = false;
-            if(type === 'video') {
-                  muteBoolean = !this.props.muteStreamVideo;
-                  this.props.updateTabConfig({ muteStreamVideo: muteBoolean });
-            } else {
-                  muteBoolean = !this.props.muteStreamAudio;
-                  this.props.updateTabConfig({ muteStreamAudio: muteBoolean });
-            };
-            
-            this.connection && this.rtc.userEventHandlers.muteOrUnmuteStream(muteBoolean, type, (err)=>{
-                  this.props.toast && this.props.toast('Error: Cannot mute or unmute stream '+type, {
-                        type: 'error',
-                        autoClose: 7000
-                  })
-            });
       }
 
       _onProps(nextProps) {
@@ -309,7 +306,7 @@ class Monitor extends Component {
                         autoClose: 5000
                   })
             );
-            this.props.updateTabConfig({ resolution });         
+            this.props.updateTabConfig({ resolution, muteStreamVideo: false, muteStreamAudio: false });    
       }
 
       _onSelectFrameRate(mode='min', eventKey, e) {
@@ -328,9 +325,27 @@ class Monitor extends Component {
                         autoClose: 5000
                   })
             );
-            this.props.updateTabConfig({ ...state }); 
+            this.props.updateTabConfig({ ...state, muteStreamVideo: false, muteStreamAudio: false });  
       }
 
+      _onMuteRemote(type) {
+            c.log('Mute broadcast stream type: '+type, this.refs.video.srcObject);
+            let mute = false;
+            if(type === 'video') {
+                  mute = !this.props.muteStreamVideo;
+                  this.props.updateTabConfig({ muteStreamVideo: mute, });
+            } else {
+                  mute = !this.props.muteStreamAudio;
+                  this.props.updateTabConfig({ muteStreamAudio: mute, });
+            };
+
+            this.connection && this.rtc.userEventHandlers.muteOrUnmuteStream(mute, type, (err)=>{
+                  this.props.toast && this.props.toast('Error: Cannot mute or unmute stream '+type, {
+                        type: 'error',
+                        autoClose: 7000
+                  })
+            }, this.refs.video.srcObject);
+      }
 
       _onExtraDataUpdate(e) {
             const userId = e.userid;
