@@ -38,8 +38,6 @@ class Home extends Component {
 
         c = new ComponentLogging('Home');
 
-        this.toastId = null;
-
         this.state = {
             initialized: false,
             monitorId: '',
@@ -49,6 +47,7 @@ class Home extends Component {
             form: this._getInitialFormState(),
             createSessionType: 'broadcast', // default is broadcast
             disabledButton: false,
+            toastId: null,
         };
 
         this.isRemovingTab = false; // it needs immediate blocking so not using state
@@ -134,7 +133,12 @@ class Home extends Component {
                             <FadingCircle size={60}  color="white"/>
                         </div>
                     }
-                    <Monitor { ...tabConfig } toast={this._toastPreventingMultiple.bind(this)}/>
+                    <Monitor 
+                        { ...tabConfig } 
+                        toast={this._toastPreventingMultiple.bind(this)}
+                        onViewerRestart={this._onModalConfirm.bind(this)}
+                        openModal={()=>this.setState({ isModalOpen: true })}
+                    />
                 </div>
             </TabPanel>
         ));
@@ -244,8 +248,8 @@ class Home extends Component {
 
     _toastPreventingMultiple(msg, options) {
         c.log('TOAST ACTIVE? ',! toast.isActive(this.toastId));
-        if(! toast.isActive(this.toastId)) {
-            this.toastId = toast(msg, options);
+        if(! toast.isActive(this.state.toastId)) {
+            this.setState({ toastId: toast(msg, options) });
         };
     }
 
@@ -313,7 +317,7 @@ class Home extends Component {
         };
     }
 
-    _onModalConfirm() {
+    _onModalConfirm(e, restartView = false) {
         c.log('Form values: ', this.state.form);
         const { form, createSessionType } = this.state;
         let _form;
@@ -343,7 +347,12 @@ class Home extends Component {
             }
         });
         
-        if(!allValid) return; // return if any field is invalid
+        if(!allValid) return null; // return if any field is invalid
+
+        /* if viewer pressed restart session */
+        if(restartView) { 
+            return { monitorId: form.monitorId.value, title };
+        };
 
         let tabs = [ ...this.state.tabs ];
         const thisIndex = tabs.length;
@@ -354,6 +363,7 @@ class Home extends Component {
             (e, constraints)=> this._onStream(e, sessionId, constraints),
             (e, receiverId)=> this._onSessionClosed(e, receiverId, sessionId),
             (type, e) => this._onMuteOrUnmute(sessionId, type, e),
+            (e)=> this._toastPreventingMultiple(`Get user media error: ${e}`, { type: 'error', autoClose: 5000 }),
         );
 
         let monitorId;
@@ -403,6 +413,7 @@ class Home extends Component {
             (e, constraints)=> this._onStream(e, sessionId, constraints),
             (e, receiverId)=> this._onSessionClosed(e, receiverId, sessionId),
             (type, e) => this._onMuteOrUnmute(sessionId, type, e),
+            (e)=> this._toastPreventingMultiple(`Get user media error: ${e}`, { type: 'error', autoClose: 5000 }),
         );
 
         if(tabConfig.sessionType === 'broadcast') {
@@ -501,6 +512,10 @@ class Home extends Component {
         if( !this.isRemovingTab ) {
             // c.log('onSelect Session: '+tabIndex);
             this.setState({ tabIndex });
+
+            let connection = this.state.tabs[tabIndex].rtcSession.connection;
+            c.log('Connection of '+connection.userid+' : ', connection);    
+            c.log('Latest Stream : '+connection.latestStreamId);        
         };
     }
 
