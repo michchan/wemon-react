@@ -72,6 +72,10 @@ body {
   font-size: 1.5em;
   color: #DEDEDE;
 }
+.App-version {
+  font-size: 1em;
+  color: #BEBEBE;
+}
 
 .App-intro {
   font-size: large;
