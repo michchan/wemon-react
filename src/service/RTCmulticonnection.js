@@ -429,6 +429,9 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
 
     applyConstraints: (constraints, errorCallback=()=>{}, filtered = false) => {
         let validConstraints = filtered? constraints : filterConstraintsByBrowser(connection, constraints);
+
+        if( _.isEqual(validConstraints, connection.mediaConstraints) ) 
+            return log('Same constraints found, not proceeding to update.');
         log(connection.userid + ' Apply Constraints, ', validConstraints, 'last Constraints, ', connection.mediaConstraints);
 
         if(connection.DetectRTC.browser.name === 'Chrome') {
@@ -505,10 +508,11 @@ const filterConstraintsByBrowser = (connection, constraints) => {
     let supports = navigator.mediaDevices.getSupportedConstraints();
     log('MediaConstraints support: ', supports);
 
+    // Merge empty constraints with existing connection.mediaConstraints
     if( _.isObject(connection.mediaConstraints.video) ) {
         if(isFirefox) {
             filteredConstraints.video = { ...connection.mediaConstraints.video };
-        } else {
+        } else if(isChrome) {
             filteredConstraints.video.mandatory = { ...connection.mediaConstraints.video.mandatory };
             connection.mediaConstraints.video.optional.length > 0 
                 && filteredConstraints.video.optional.push({ ...connection.mediaConstraints.video.optional[0] });
@@ -517,7 +521,7 @@ const filterConstraintsByBrowser = (connection, constraints) => {
     if( _.isObject(connection.mediaConstraints.audio) ) {
         if(isFirefox) {
             filteredConstraints.audio = { ...connection.mediaConstraints.audio };
-        } else {
+        } else if(isChrome) {
             filteredConstraints.audio.mandatory = { ...connection.mediaConstraints.audio.mandatory };
             connection.mediaConstraints.audio.optional.length > 0 
                 && filteredConstraints.audio.optional.push({ ...connection.mediaConstraints.audio.optional[0] });
@@ -531,27 +535,27 @@ const filterConstraintsByBrowser = (connection, constraints) => {
     /* Video Constraints */
     if (supports.width && constraints.width) {
         if(isFirefox) filteredConstraints.video.width = constraints.width || connection.video.width;
-        else {
+        else if(isChrome) {
             filteredConstraints.video.mandatory.minWidth = constraints.width;
             filteredConstraints.video.mandatory.maxWidth = constraints.width;
         };
     }
     if (supports.height && constraints.height) {
         if(isFirefox) filteredConstraints.video.height = constraints.height;
-        else {
+        else if(isChrome) {
             filteredConstraints.video.mandatory.minHeight = constraints.height;
             filteredConstraints.video.mandatory.maxHeight = constraints.height;
         };
     }
     if(supports.aspectRatio && constraints.aspectRatio) {
         if(isFirefox) filteredConstraints.video.aspectRatio = constraints.aspectRatio;
-        else filteredConstraints.video.mandatory.minAspectRatio = constraints.aspectRatio;
+        else if(isChrome) filteredConstraints.video.mandatory.minAspectRatio = constraints.aspectRatio;
     }
     if(supports.frameRate && constraints.minFrameRate) {
         if(isFirefox) {
             !filteredConstraints.video.frameRate && (filteredConstraints.video.frameRate = {});
             filteredConstraints.video.frameRate.min = constraints.minFrameRate;
-        } else {
+        } else if(isChrome) {
             filteredConstraints.video.mandatory.minFrameRate = constraints.minFrameRate;
         };
     }
@@ -559,20 +563,20 @@ const filterConstraintsByBrowser = (connection, constraints) => {
         if(isFirefox) {
             !filteredConstraints.video.frameRate && (filteredConstraints.video.frameRate = {});
             filteredConstraints.video.frameRate.max = constraints.maxFrameRate;
-        } else {
+        } else if(isChrome) {
             filteredConstraints.video.mandatory.maxFrameRate = constraints.maxFrameRate;
         };
     }
     if(supports.deviceId && constraints.deviceId) {
         if(isFirefox) filteredConstraints.video.deviceId = constraints.deviceId;
-        else {
+        else if(isChrome) {
             filteredConstraints.video.optional.length === 0 && filteredConstraints.video.optional.push({});
             filteredConstraints.video.optional[0].sourceId = constraints.deviceId;
         }
     }
     if(supports.facingMode && constraints.facingMode) {
         if(isFirefox) filteredConstraints.video.facingMode = constraints.facingMode;
-        else {
+        else if(isChrome) {
             filteredConstraints.video.optional.length === 0 && filteredConstraints.video.optional.push({});
             filteredConstraints.video.optional[0].facingMode = constraints.facingMode;
         }
@@ -581,7 +585,7 @@ const filterConstraintsByBrowser = (connection, constraints) => {
     /* Audio Constraints */
     if(supports.echoCancellation && _.isBoolean(constraints.echoCancellation) ) {
         if(isFirefox) filteredConstraints.audio.echoCancellation = constraints.echoCancellation;
-        else filteredConstraints.audio.mandatory.echoCancellation = constraints.echoCancellation;
+        else if(isChrome) filteredConstraints.audio.mandatory.echoCancellation = constraints.echoCancellation;
     }
 
     if( _.isEmpty(filteredConstraints.video.mandatory) ) filteredConstraints.video = true;
