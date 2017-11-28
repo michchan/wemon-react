@@ -128,13 +128,12 @@ const _setConnectionEventHandler = (connection, userEventHandlers, refs, buffer,
     connection.captureUserMediaErrorCallback = captureUserMediaErrorCallback || ((e, constraints)=>logErr('captureUserMedia error', e, constraints));
     connection.onstream = handlers.onStream;
     connection.onstreamended = handlers.onStreamEnded;
-    connection.onleave = handlers.onLeave;
     connection.onEntireSessionClosed = handlers.onEntireSessionClosed;
     connection.onExtraDataUpdated = handlers.onExtraDataUpdated;
     connection.onmute = handlers.onMute;
     connection.onunmute = handlers.onUnmute;
-    connection.onclose = handlers.onclose;
-    connection.onleave = handlers.onleave;
+    connection.onclose = handlers.onClose;
+    // connection.onleave = handlers.onLeave;
     connection.onMediaError = handlers.onMediaError;
 };
 
@@ -345,8 +344,10 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
         log(connection.userid + ' received onMute event: ', e);
         if(!connection.isInitiator) return onMuteOrUnmuteCallback('mute', e); //e.muteType
 
-        connection.extra.muted[e.muteType] = true;
-        connection.updateExtraData();
+        if(!connection.extra.muted[e.muteType]){
+            connection.extra.muted[e.muteType] = true;
+            connection.updateExtraData();
+        }
 
         connection.lastMuteEvent = e;
         connection.lastMuteType = e.muteType;
@@ -358,18 +359,16 @@ const _getConnectionEventHandlers = (connection, refs, buffer, onStreamCallback,
         log(connection.userid + ' received onUnmute event: ', e);
         if(!connection.isInitiator) return onMuteOrUnmuteCallback('unmute', e); //e.unmuteType
 
-        connection.extra.muted[e.unmuteType] = false;
-        connection.updateExtraData();
+        if(!!connection.extra.muted[e.muteType]){
+            connection.extra.muted[e.unmuteType] = false;
+            connection.updateExtraData();
+        }
 
         connection.lastUnmuteEvent = e;
         connection.lastUnmuteType = e.unmuteType;
     },
 
-    onleave: (e) => {
-        log(connection.userid + ' received leave from: '+e.userid);
-    },
-
-    onclose: (e) => {
+    onClose: (e) => {
         log(connection.userid + ' received Broadcaster closed the monitor: '+e.userid);
     },
 
@@ -454,8 +453,6 @@ const _getUserEventHandlers = (connection, refs, buffer, onStreamCallback) => ({
         try {
             log('muteOrUnmuteStream by '+connection.userid);
             
-            let streamEvent = connection.streamEvents.selectFirst();
-
             _.forEach(connection.streamEvents, (props) => {
                 if(typeof props !== 'object') return;
 
@@ -639,6 +636,7 @@ const renegotiateConnection = (connection, onStreamCallback, errorCallback) => {
             log('New Local stream event from connection.captureUserMedia: ', streamEvent);   
             log('streamEvents before new stream: ', connection.streamEvents);
             connection.onstream(streamEvent);
+            connection.streamEvents = _getEmptyStreamEvents(connection);
             connection.streamEvents[streamEvent.id] = streamEvent;
             
             connection.getAllParticipants().forEach(function (pid) {
@@ -656,3 +654,12 @@ const renegotiateConnection = (connection, onStreamCallback, errorCallback) => {
         }
     }, connection.mediaConstraints);
 }
+
+const _getEmptyStreamEvents = (connection) => {
+    let newStreamEvents = {};
+    _.forEach(connection.streamEvent, (props, key) => {
+        if(typeof props === 'object') return;
+        newStreamEvents[key] = props;
+    });
+    return newStreamEvents;
+};
