@@ -269,8 +269,9 @@ body {
   min-height: 0.7vh;
 }
 .Monitor__video {
-  min-width: 450px;
-  min-height: 350px;
+  width: 100%;
+  min-height: 40vw;
+  max-height: 80vw;
   background: #000;
 }
 .Monitor__info-container {
