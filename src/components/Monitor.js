@@ -3,8 +3,12 @@ import { ComponentLogging, logDOMError } from '../service/log';
 import _ from 'lodash';
 import {CopyToClipboard} from 'react-copy-to-clipboard';
 import { Button, ButtonToolbar, ButtonGroup, FormGroup, ControlLabel, DropdownButton, MenuItem, Form } from 'react-bootstrap';
+import Rnd from 'react-rnd';
+import { setInterval } from 'timers';
 
 let c;
+const VIDEO_WIDTH = window.innerWidth * 0.63;
+const VIDEO_HEIGHT = window.innerWidth * 0.4;
 
 class Monitor extends Component {
       constructor(props) {
@@ -18,6 +22,8 @@ class Monitor extends Component {
             
             this.state = {
                   showCopyMonitorIdIcon: false,
+                  width: VIDEO_WIDTH,
+                  height: VIDEO_HEIGHT,
             }; // state will lose after tab switched
 
             c.log('List of available resolutions: ', props.resolutions);
@@ -28,8 +34,16 @@ class Monitor extends Component {
             c.log('mounted, session, ', this.rtc);
             c.log('Connection of this session, ', this.connection);
 
-            if(this.props.sessionType === 'broadcast') this.refs.video.volume = 0; // Avoid making noise for broadcaster on start
+            if(this.props.sessionType === 'broadcast') {
+                  let int = setInterval(()=> {
+                        if(this.refs.video) {
+                              this.refs.video.volume = 0; // Avoid making noise for broadcaster on start  
+                              clearInterval(int);  
+                        }                                            
+                  }, 10);
+            }
 
+            // this.rtc.onExtraDataUpdatedCallback = this._onExtraDataUpdate.bind(this);
             this.connection.onExtraDataUpdated = this._onExtraDataUpdate.bind(this);
       }
 
@@ -91,11 +105,11 @@ class Monitor extends Component {
                                           }
                                           { 
                                                 (remoteMinFrameRate && this.props.sessionType === 'view') && 
-                                                <h5>Minimum Frame Rate: &nbsp;&nbsp;{ `${remoteMinFrameRate.name} - ${remoteMinFrameRate.fps}` }</h5> 
+                                                <h5>Minimum FPS: &nbsp;&nbsp;{ `${remoteMinFrameRate.name} - ${remoteMinFrameRate.fps}` }</h5> 
                                           }
                                           { 
                                                 (remoteMaxFrameRate && this.props.sessionType === 'view') && 
-                                                <h5>Maximum Frame Rate: &nbsp;&nbsp;{ `${remoteMaxFrameRate.name} - ${remoteMaxFrameRate.fps}` }</h5> 
+                                                <h5>Maximum FPS: &nbsp;&nbsp;{ `${remoteMaxFrameRate.name} - ${remoteMaxFrameRate.fps}` }</h5> 
                                           }
                                     </div>
                                     <div className='Monitor__config-container'>
@@ -110,7 +124,7 @@ class Monitor extends Component {
                                                 </ButtonToolbar>
                                           </FormGroup>
                                           {
-                                                isBroadcast &&
+                                                (isBroadcast && resolution) &&
                                                 <FormGroup>
                                                       <ControlLabel>Resolutions: &nbsp;</ControlLabel>
                                                       <DropdownButton bsStyle={'default'} id={'resolutions'} 
@@ -131,21 +145,60 @@ class Monitor extends Component {
                                     </div>
                               </div>
                               <div className='Monitor__video-col col-md-8'>
-                                    <div className='col'>
-                                          <video 
-                                                ref="video" 
-                                                // src={ this.props.src || '' }
-                                                controls
-                                                autoPlay
-                                                loop
-                                                className='Monitor__video'
-                                                muted={this.props.muted}
-                                                onVolumeChange={this._onVolumeChange.bind(this)}
-                                          />
+                                    <div 
+                                          className='row'
+                                          { ... isBroadcast? {} : {style: { minHeight: this.state.height }} }
+                                    >
+                                          {     !!isBroadcast &&
+                                                <video 
+                                                      ref={'video'} 
+                                                      id="video"
+                                                      // src={ this.props.src || '' }
+                                                      controls
+                                                      autoPlay
+                                                      loop
+                                                      className='Monitor__video broadcast'
+                                                      muted={this.props.muted}
+                                                      onVolumeChange={this._onVolumeChange.bind(this)}
+                                                />
+                                          }
+                                          {     ! isBroadcast && 
+                                                <Rnd  
+                                                      className="Monitor__draggable-container"
+                                                      size={{ width: this.state.width,  height: this.state.height }}
+                                                      position={{ x: 0, y: 0 }}
+                                                      onResize={(e, direction, ref, delta, position) => {
+                                                            this.setState({
+                                                                  width: ref.offsetWidth,
+                                                                  height: ref.offsetHeight,
+                                                            });
+                                                      }}
+                                                      minWidth={200}
+                                                      minHeight={100}
+                                                      maxWidth={VIDEO_WIDTH}
+                                                      disableDragging
+                                                      // lockAspectRatio
+                                                >
+                                                      <video 
+                                                            ref={'video'} 
+                                                            id="video"
+                                                            // src={ this.props.src || '' }
+                                                            controls
+                                                            autoPlay
+                                                            loop
+                                                            className='Monitor__video'
+                                                            muted={this.props.muted}
+                                                            onVolumeChange={this._onVolumeChange.bind(this)}
+                                                      />
+                                                </Rnd>
+                                          }
+                                    </div>
+                                    <div className='row'>
                                           {  (()=>{
-                                                this.audioMuteBtnClassName = this.props.muteStreamAudio?'fa fa-volume-up fa-2x': 'fa fa-volume-off fa-2x';
-                                                this.videoMuteBtnClassName = this.props.muteStreamVideo?'fa fa-play fa-2x': "fa fa-pause fa-2x";
-                                          })() }
+                                                      this.audioMuteBtnClassName = this.props.muteStreamAudio?'fa fa-volume-up fa-2x': 'fa fa-volume-off fa-2x';
+                                                      this.videoMuteBtnClassName = this.props.muteStreamVideo?'fa fa-play fa-2x': "fa fa-pause fa-2x";
+                                                })() 
+                                          }
                                           {     isBroadcast &&
                                                 <ButtonGroup>
                                                       <Button onClick={this._onMuteRemote.bind(this, 'audio')} active={this.props.muteStreamAudio}>
@@ -175,7 +228,7 @@ class Monitor extends Component {
             if(isBroadcast)
                   return (
                         <FormGroup>
-                              <ControlLabel>{title} Frame Rate (fps): &nbsp;</ControlLabel>
+                              <ControlLabel>{title} FPS: &nbsp;</ControlLabel>
                               <DropdownButton bsStyle={'default'} id={`${mode}FrameRateSelect`} 
                                     title={`${frameRate.name} - ${frameRate.fps}`} 
                                     onSelect={ (evtKey, e) => this._onSelectFrameRate(mode, evtKey, e) }
@@ -291,7 +344,7 @@ class Monitor extends Component {
             c.log(msg);
             this.props.toast && this.props.toast(msg, {
                   type: 'info',
-                  autoClose: 5000
+                  autoClose: 3000
             });
       }
 
@@ -350,16 +403,22 @@ class Monitor extends Component {
       _onExtraDataUpdate(e) {
             const userId = e.userid;
             const extra = { ...e.extra };
-            c.log(e);
+            c.log('_onExtraDataUpdate', e);
             const isChrome = this.connection.DetectRTC.browser.name === 'Chrome';
 
             if(!extra) return;
 
             if(extra.muted &&  (!this.connection.isInitiator || this.props.sessionType !== 'broadcast')) {
-                  if( !_.isEqual(extra.muted.video, this.props.remoteStreamVideoMuted) ) 
+                  let message;
+                  if( !_.isEqual(extra.muted.video, this.props.remoteStreamVideoMuted) ) {
                         this.props.updateTabConfig({ remoteStreamVideoMuted: extra.muted.video });
-                  if( !_.isEqual(extra.muted.audio, this.props.remoteStreamAudioMuted) ) 
+                        message = `Remote broadcaster ${extra.muted.video? 'muted' : 'unmuted'} video.`
+                  }
+                  if( !_.isEqual(extra.muted.audio, this.props.remoteStreamAudioMuted) ) {
                         this.props.updateTabConfig({ remoteStreamAudioMuted: extra.muted.audio });
+                        message = `Remote broadcaster ${extra.muted.audio? 'muted' : 'unmuted'} audio.`
+                  }
+                  this.props.toast(message, { type: 'info', autoClose: 3000 });
             };
 
             if(extra.constraints && (!this.connection.isInitiator || this.props.sessionType !== 'broadcast')) {
