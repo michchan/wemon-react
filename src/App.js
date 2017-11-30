@@ -8,6 +8,11 @@ import Home from './components/Home';
 const packageConfigs = require('../package.json');
 
 class App extends Component {
+  componentWillMount() {
+    if(!packageConfigs.dev) {
+      console.log = function(){};
+    };
+  }
 
   render() {
     return (
