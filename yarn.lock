@@ -5455,6 +5455,10 @@ rc@^1.0.1, rc@^1.1.6, rc@^1.1.7:
     minimist "^1.2.0"
     strip-json-comments "~2.0.1"
 
+re-resizable@^4.0.0:
+  version "4.0.3"
+  resolved "https://registry.yarnpkg.com/re-resizable/-/re-resizable-4.0.3.tgz#cec310a35b57bd6f2d6c298fcfb12515baa8f017"
+
 react-addons-css-transition-group@15.6.2:
   version "15.6.2"
   resolved "https://registry.yarnpkg.com/react-addons-css-transition-group/-/react-addons-css-transition-group-15.6.2.tgz#9e4376bcf40b5217d14ec68553081cee4b08a6d6"
@@ -5519,6 +5523,13 @@ react-dom@^15.6.1:
     object-assign "^4.1.0"
     prop-types "^15.5.10"
 
+react-draggable@^3.0.3:
+  version "3.0.4"
+  resolved "https://registry.yarnpkg.com/react-draggable/-/react-draggable-3.0.4.tgz#71cff58441e0fa2be9e1cd88f66718a8495210f7"
+  dependencies:
+    classnames "^2.2.5"
+    prop-types "^15.6.0"
+
 react-error-overlay@^3.0.0:
   version "3.0.0"
   resolved "https://registry.yarnpkg.com/react-error-overlay/-/react-error-overlay-3.0.0.tgz#c2bc8f4d91f1375b3dad6d75265d51cd5eeaf655"
@@ -5551,6 +5562,13 @@ react-redux@5.0.6:
     lodash-es "^4.2.0"
     loose-envify "^1.1.0"
     prop-types "^15.5.10"
+
+react-rnd@7.1.5:
+  version "7.1.5"
+  resolved "https://registry.yarnpkg.com/react-rnd/-/react-rnd-7.1.5.tgz#12429cb622b676f9c8b40f2d8c90257a0f023266"
+  dependencies:
+    re-resizable "^4.0.0"
+    react-draggable "^3.0.3"
 
 react-router-dom@4.2.2, react-router-dom@^4.1.1:
   version "4.2.2"
