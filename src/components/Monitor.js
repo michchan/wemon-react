@@ -7,8 +7,8 @@ import Rnd from 'react-rnd';
 import { setInterval } from 'timers';
 
 let c;
-const VIDEO_WIDTH = window.innerWidth * 0.63;
-const VIDEO_HEIGHT = window.innerWidth * 0.4;
+const VIDEO_WIDTH_FACTOR = 0.63;
+const VIDEO_HEIGHT_FACTOR = 0.4;
 
 class Monitor extends Component {
       constructor(props) {
@@ -22,8 +22,8 @@ class Monitor extends Component {
             
             this.state = {
                   showCopyMonitorIdIcon: false,
-                  width: VIDEO_WIDTH,
-                  height: VIDEO_HEIGHT,
+                  width: window.innerWidth * VIDEO_WIDTH_FACTOR,
+                  height: window.innerHeight * VIDEO_HEIGHT_FACTOR,
             }; // state will lose after tab switched
 
             c.log('List of available resolutions: ', props.resolutions);
@@ -43,6 +43,8 @@ class Monitor extends Component {
                   }, 10);
             }
 
+            window.addEventListener('resize', this._onWindowResize.bind(this));
+
             // this.rtc.onExtraDataUpdatedCallback = this._onExtraDataUpdate.bind(this);
             this.connection.onExtraDataUpdated = this._onExtraDataUpdate.bind(this);
       }
@@ -53,6 +55,7 @@ class Monitor extends Component {
 
       componentWillUnmount() {
             c.log('will unmount');
+            window.removeEventListener('resize', this._onWindowResize);
       }
 
       render() {
@@ -124,7 +127,7 @@ class Monitor extends Component {
                                                 </ButtonToolbar>
                                           </FormGroup>
                                           {
-                                                (isBroadcast && resolution) &&
+                                                (resolution) &&
                                                 <FormGroup>
                                                       <ControlLabel>Resolutions: &nbsp;</ControlLabel>
                                                       <DropdownButton bsStyle={'default'} id={'resolutions'} 
@@ -140,8 +143,8 @@ class Monitor extends Component {
                                                       </DropdownButton>
                                                 </FormGroup>
                                           }
-                                          { this._renderSelectFrameRates('min', isBroadcast) }
-                                          { this._renderSelectFrameRates('max', isBroadcast) }
+                                          { this._renderSelectFrameRates('min', isBroadcast, remoteMinFrameRate) }
+                                          { this._renderSelectFrameRates('max', isBroadcast, remoteMaxFrameRate) }
                                     </div>
                               </div>
                               <div className='Monitor__video-col col-md-8'>
@@ -149,20 +152,11 @@ class Monitor extends Component {
                                           className='row'
                                           { ... isBroadcast? {} : {style: { minHeight: this.state.height }} }
                                     >
-                                          {     !!isBroadcast &&
-                                                <video 
-                                                      ref={'video'} 
-                                                      id="video"
-                                                      // src={ this.props.src || '' }
-                                                      controls
-                                                      autoPlay
-                                                      loop
-                                                      className='Monitor__video broadcast'
-                                                      muted={this.props.muted}
-                                                      onVolumeChange={this._onVolumeChange.bind(this)}
-                                                />
+                                          {     (!!isBroadcast || window.innerWidth < 760) &&
+                                                this._renderVideo('Monitor__video broadcast')
                                           }
-                                          {     ! isBroadcast && 
+                                          {     
+                                                (! isBroadcast && window.innerWidth >= 760) &&
                                                 <Rnd  
                                                       className="Monitor__draggable-container"
                                                       size={{ width: this.state.width,  height: this.state.height }}
@@ -175,21 +169,11 @@ class Monitor extends Component {
                                                       }}
                                                       minWidth={200}
                                                       minHeight={100}
-                                                      maxWidth={VIDEO_WIDTH}
+                                                      maxWidth={window.innerWidth * VIDEO_WIDTH_FACTOR}
                                                       disableDragging
                                                       // lockAspectRatio
                                                 >
-                                                      <video 
-                                                            ref={'video'} 
-                                                            id="video"
-                                                            // src={ this.props.src || '' }
-                                                            controls
-                                                            autoPlay
-                                                            loop
-                                                            className='Monitor__video'
-                                                            muted={this.props.muted}
-                                                            onVolumeChange={this._onVolumeChange.bind(this)}
-                                                      />
+                                                      { this._renderVideo('Monitor__video') }
                                                 </Rnd>
                                           }
                                     </div>
@@ -199,11 +183,11 @@ class Monitor extends Component {
                                                       this.videoMuteBtnClassName = this.props.muteStreamVideo?'fa fa-play fa-2x': "fa fa-pause fa-2x";
                                                 })() 
                                           }
-                                          {     isBroadcast &&
+                                          {    
                                                 <ButtonGroup>
-                                                      <Button onClick={this._onMuteRemote.bind(this, 'audio')} active={this.props.muteStreamAudio}>
+                                                      <Button onClick={this._onMuteRemote.bind(this, 'audio', this.props.muteStreamAudio)} active={this.props.muteStreamAudio}>
                                                       {this.props.muteStreamAudio? 'Unmute':'Mute'} Broadcast Audio &nbsp;&nbsp;<i className={ this.audioMuteBtnClassName } ></i></Button>
-                                                      <Button onClick={this._onMuteRemote.bind(this, 'video')} active={this.props.muteStreamVideo}>
+                                                      <Button onClick={this._onMuteRemote.bind(this, 'video', this.props.muteStreamVideo)} active={this.props.muteStreamVideo}>
                                                       {this.props.muteStreamVideo? 'Unmute':'Mute'} Broadcast Video &nbsp;&nbsp;<i className={ this.videoMuteBtnClassName }></i></Button>
                                                 </ButtonGroup>
                                           }
@@ -221,27 +205,55 @@ class Monitor extends Component {
             );
       }
 
-      _renderSelectFrameRates(mode = 'min', isBroadcast = false) {
+      _renderVideo(className) {
+            return (
+                  <video 
+                        ref={'video'} 
+                        id="video"
+                        // src={ this.props.src || '' }
+                        controls
+                        autoPlay
+                        loop
+                        className={`${className}`}
+                        muted={this.props.muted}
+                        onVolumeChange={this._onVolumeChange.bind(this)}
+                  />
+            )
+      }
+
+      _renderSelectFrameRates(mode = 'min', isBroadcast = false, remoteFrameRate) {
             const title = mode === 'min'? 'Minimum': 'Maximum';
             const frameRate = this.props[`${mode}FrameRate`];
 
-            if(isBroadcast)
-                  return (
-                        <FormGroup>
-                              <ControlLabel>{title} FPS: &nbsp;</ControlLabel>
-                              <DropdownButton bsStyle={'default'} id={`${mode}FrameRateSelect`} 
-                                    title={`${frameRate.name} - ${frameRate.fps}`} 
-                                    onSelect={ (evtKey, e) => this._onSelectFrameRate(mode, evtKey, e) }
-                              >
-                                    {(()=> this.props.frameRates.map((fr, index) => (
-                                          <MenuItem eventKey={fr.name} key={index}>
-                                                { frameRate.name === fr.name && <b>{fr.name} - {fr.fps}</b> } 
-                                                { frameRate.name !== fr.name && `${fr.name} - ${fr.fps}` }
-                                          </MenuItem>
-                                    )))()}
-                              </DropdownButton>
-                        </FormGroup>
-                  );
+            return (
+                  <FormGroup>
+                        <ControlLabel>{title} FPS: &nbsp;</ControlLabel>
+                        <DropdownButton bsStyle={'default'} id={`${mode}FrameRateSelect`} 
+                              title={`${frameRate.name} - ${frameRate.fps}`} 
+                              onSelect={ (evtKey, e) => this._onSelectFrameRate(mode, evtKey, e) }
+                        >
+                              {(()=> this.props.frameRates.map((fr, index) => (
+                                    <MenuItem eventKey={fr.name} key={index}>
+                                          { frameRate.name === fr.name && <b>{fr.name} - {fr.fps}</b> } 
+                                          { frameRate.name !== fr.name && `${fr.name} - ${fr.fps}` }
+                                    </MenuItem>
+                              )))()}
+                        </DropdownButton>
+                  </FormGroup>
+            );
+      }
+
+      _onWindowResize(e) {
+            const width = e.target.innerWidth;
+
+            if(this.state.width > width * VIDEO_WIDTH_FACTOR) {
+                  this.setState({ 
+                        width: width * VIDEO_WIDTH_FACTOR,
+                        height: width * VIDEO_HEIGHT_FACTOR,
+                  })
+            }
+
+            this.forceUpdate();
       }
       
       _onRefresh() {
@@ -352,6 +364,15 @@ class Monitor extends Component {
             c.log('Selected resolution: '+ eventKey);
             this.refs.video.pause();
             let resolution = _.find(this.props.resolutions, { name: eventKey });
+            this.props.updateTabConfig({ resolution, muteStreamVideo: false, muteStreamAudio: false });                
+
+            if(! this.connection.isInitiator || this.props.sessionType === 'view') {
+                  c.log('Request to update resolution');
+                  this.connection.extra.action = { type: 'updateResolution', payload: eventKey };
+                  this.connection.updateExtraData();
+                  return;
+            };
+
             this.rtc.userEventHandlers.applyConstraints(
                   { width: resolution.width, height: resolution.height }, 
                   ()=>this.props.toast && this.props.toast('Error: Cannot update Resolution or this resolution is not supported.', {
@@ -359,7 +380,6 @@ class Monitor extends Component {
                         autoClose: 5000
                   })
             );
-            this.props.updateTabConfig({ resolution, muteStreamVideo: false, muteStreamAudio: false });    
       }
 
       _onSelectFrameRate(mode='min', eventKey, e) {
@@ -371,6 +391,15 @@ class Monitor extends Component {
             constraints[`${mode}FrameRate`] = selectedframeRate.fps;
             state[`${mode}FrameRate`] = selectedframeRate;
 
+            this.props.updateTabConfig({ ...state, muteStreamVideo: false, muteStreamAudio: false });              
+
+            if(! this.connection.isInitiator || this.props.sessionType === 'view') {
+                  c.log('Request to update frameRate');
+                  this.connection.extra.action = { type: 'updateFrameRate', payload: { mode, eventKey } };
+                  this.connection.updateExtraData();
+                  return;
+            };
+
             this.rtc.userEventHandlers.applyConstraints(
                   constraints, 
                   ()=>this.props.toast && this.props.toast('Error: Cannot update Frame Rate or this Frame Rate is not supported.', {
@@ -378,22 +407,27 @@ class Monitor extends Component {
                         autoClose: 5000
                   })
             );
-            this.props.updateTabConfig({ ...state, muteStreamVideo: false, muteStreamAudio: false });  
       }
 
-      _onMuteRemote(type) {
+      _onMuteRemote(type, currentMuteState) {
             c.log('Mute broadcast stream type: '+type, this.refs.video.srcObject);
-            let mute = false;
+            let nextMuteState = ! currentMuteState;
             if(type === 'video') {
-                  mute = !this.props.muteStreamVideo;
-                  this.props.updateTabConfig({ muteStreamVideo: mute, });
+                  this.props.updateTabConfig({ muteStreamVideo: nextMuteState, });
             } else {
-                  mute = !this.props.muteStreamAudio;
-                  this.props.updateTabConfig({ muteStreamAudio: mute, });
+                  this.props.updateTabConfig({ muteStreamAudio: nextMuteState, });
             };
 
-            this.connection && this.rtc.userEventHandlers.muteOrUnmuteStream(mute, type, (err)=>{
-                  this.props.toast && this.props.toast('Error: Cannot mute or unmute stream '+type, {
+            if(! this.connection.isInitiator || this.props.sessionType === 'view') {
+                  c.log('Request to nextMuteState/Unmute remote');
+                  this.connection.extra.action = { type: 'muteOrUnmute', payload: { type, currentMuteState } };
+                  this.connection.updateExtraData();
+                  return;
+            };
+
+
+            this.connection && this.rtc.userEventHandlers.muteOrUnmuteStream(nextMuteState, type, (err)=>{
+                  this.props.toast && this.props.toast('Error: Cannot nextMuteState or unmute stream '+type, {
                         type: 'error',
                         autoClose: 7000
                   })
@@ -408,14 +442,50 @@ class Monitor extends Component {
 
             if(!extra) return;
 
+            if(extra.action) {
+                  let action = extra.action;
+                  switch (action.type) {
+                        case 'updateResolution':
+                              if(this.connection.isInitiator) {
+                                    let msg = 'the remote viewer has requested to update resolution';
+                                    c.log(msg);
+                                    this.props.toast(msg, { type:'info', autoClose: 3000 });
+                                    this._onSelectResolution(action.payload);
+                              };
+                              break;
+                        case 'updateFrameRate':
+                              if(this.connection.isInitiator) {
+                                    let msg = 'the remote viewer has requested to update resolution';
+                                    c.log(msg);
+                                    this.props.toast(msg, { type:'info', autoClose: 3000 });
+                                    this._onSelectFrameRate(action.payload.mode, action.payload.eventKey);
+                              };
+                              break;
+                        case 'muteOrUnmute': 
+                              if(this.connection.isInitiator) {
+                                    let msg = 'the remote viewer has requested to mute or unmute stream';
+                                    c.log(msg);
+                                    this.props.toast(msg, { type:'info', autoClose: 3000 });
+                                    this._onMuteRemote(action.payload.type, action.payload.currentMuteState);
+                              };
+                              break;
+                        default:
+                              break;
+                  }
+            }
+
             if(extra.muted &&  (!this.connection.isInitiator || this.props.sessionType !== 'broadcast')) {
                   let message;
                   if( !_.isEqual(extra.muted.video, this.props.remoteStreamVideoMuted) ) {
-                        this.props.updateTabConfig({ remoteStreamVideoMuted: extra.muted.video });
+                        let remoteStreamVideoMuted;
+                        let muteStreamVideo = remoteStreamVideoMuted = extra.muted.video;
+                        this.props.updateTabConfig({ remoteStreamVideoMuted, muteStreamVideo });
                         message = `Remote broadcaster ${extra.muted.video? 'muted' : 'unmuted'} video.`
                   }
                   if( !_.isEqual(extra.muted.audio, this.props.remoteStreamAudioMuted) ) {
-                        this.props.updateTabConfig({ remoteStreamAudioMuted: extra.muted.audio });
+                        let remoteStreamAudioMuted;
+                        let muteStreamAudio = remoteStreamAudioMuted = extra.muted.audio;
+                        this.props.updateTabConfig({ remoteStreamAudioMuted, muteStreamAudio });
                         message = `Remote broadcaster ${extra.muted.audio? 'muted' : 'unmuted'} audio.`
                   }
                   this.props.toast(message, { type: 'info', autoClose: 3000 });
