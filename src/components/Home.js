@@ -22,7 +22,7 @@ import {
 import Monitor from './Monitor';
 
 import { ComponentLogging } from '../service/log';
-import RTCService from '../service/RTCmulticonnection';
+import RTCService from '../service/rtc-service';
 import { global } from 'core-js/library/web/timers';
 
 var c;
@@ -387,6 +387,7 @@ class Home extends Component {
             loading: true,
             restartSession: ()=>{},
             muted: createSessionType === 'broadcast'? true : false,
+            volume: createSessionType === 'broadcast'? 0 : 1,
             resolutions: rtcSession.userEventHandlers.getResolutions() || [],
             frameRates: rtcSession.userEventHandlers.getFrameRates() || [],
             resolution: createSessionType === 'view'? null : rtcSession.userEventHandlers.getDefaultResolution(),            
