@@ -566,7 +566,7 @@ class Monitor extends Component {
 
 
             this.connection && this.rtc.userEventHandlers.muteOrUnmuteStream(nextMuteState, type, (err)=>{
-                  this.props.toast && this.props.toast('Error: Cannot nextMuteState or unmute stream '+type, {
+                  this.props.toast && this.props.toast('Error: Cannot mute or unmute stream '+type, {
                         type: 'error',
                         autoClose: 7000
                   })

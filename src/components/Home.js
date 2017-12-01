@@ -418,7 +418,7 @@ class Home extends Component {
         );
 
         if(tabConfig.sessionType === 'broadcast') {
-            tabConfig.monitorId = tabConfig.rtcSession.connection.token();
+            tabConfig.monitorId = tabConfig.rtcSession.connection.token().substr(0,6);
         } else { // if the viewer has provide a new monitorId
             if(monitorId) tabConfig.monitorId = monitorId;
             // if not, use the old one

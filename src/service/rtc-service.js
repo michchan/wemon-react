@@ -629,7 +629,9 @@ const renegotiateConnection = (connection, onStreamCallback, errorCallback) => {
 
     if(connection.attachStreams.length !==0 ) {
         connection.attachStreams.forEach((oldStream) => {
-            oldStream.stop();
+            setTimeout(()=>{
+                oldStream.stop();                
+            }, 3000);
         });
     };
 
