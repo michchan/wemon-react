@@ -305,7 +305,7 @@ class Home extends Component {
         };
 
         if( propName === formProps.monitorId ) {
-            if (length > 10) return {
+            if (length > 5) return {
                 status: 'success',
                 message: null,
             };
@@ -368,7 +368,7 @@ class Home extends Component {
 
         let monitorId;
         if(createSessionType === 'broadcast') {
-            monitorId = rtcSession.connection.token();
+            monitorId = rtcSession.connection.token().substr(0, 6);
         };
         if(createSessionType === 'view') {
             monitorId = form.monitorId.value;
