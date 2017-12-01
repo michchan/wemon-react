@@ -50,13 +50,15 @@ export default class RTCMultiConnectionSession {
         this.onMuteOrUnmuteCallback = onMuteOrUnmuteCallback;
         this.captureUserMediaErrorCallback = captureUserMediaErrorCallback;
         
+        this.recorder = null;
+        
         this.refs = {
             video: null,
             broadcastIdInput: null,            
         };
 
         this.buffer = {
-            allRecordedBlobs: [],
+            recordings: [],
         };
 
         this.enableRecordings = false;

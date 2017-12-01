@@ -5,10 +5,14 @@ import {CopyToClipboard} from 'react-copy-to-clipboard';
 import { Button, ButtonToolbar, ButtonGroup, FormGroup, ControlLabel, DropdownButton, MenuItem, Form } from 'react-bootstrap';
 import Rnd from 'react-rnd';
 import { setInterval } from 'timers';
+import moment from 'moment';
 
 let c;
 const VIDEO_WIDTH_FACTOR = 0.63;
 const VIDEO_HEIGHT_FACTOR = 0.4;
+var RecordRTC = window.RecordRTC;
+var MediaStreamRecorder = window.MediaStreamRecorder;
+var JSZip = window.JSZip;
 
 class Monitor extends Component {
       constructor(props) {
@@ -24,10 +28,20 @@ class Monitor extends Component {
                   showCopyMonitorIdIcon: false,
                   width: window.innerWidth * VIDEO_WIDTH_FACTOR,
                   height: window.innerHeight * VIDEO_HEIGHT_FACTOR,
+                  trackingOn: false,
+                  recordingOn: false,
+                  motionDetectOn: false,
             }; // state will lose after tab switched
 
             c.log('List of available resolutions: ', props.resolutions);
             c.log('Default resolution: ', props.resolution);
+
+            this.lastExtra = null;
+            this.lastAction = null;
+            this.lastConstraints = null;
+            this.lastMuted = null;
+            this.lastRes = null;
+            this.lastFrameRate = null;
       }
 
       componentDidMount() {   
@@ -145,6 +159,36 @@ class Monitor extends Component {
                                           }
                                           { this._renderSelectFrameRates('min', isBroadcast, remoteMinFrameRate) }
                                           { this._renderSelectFrameRates('max', isBroadcast, remoteMaxFrameRate) }
+                                          <FormGroup>
+                                                <ButtonToolbar>
+                                                      {/* <Button onClick={this._onSwitchMotionDetection.bind(this)} active={this.state.motionDetectOn}>
+                                                            { this.state.motionDetectOn? 'Stop Motion Detection':'Start Motion Detection' } 
+                                                      </Button> */}
+                                                      <Button onClick={this._onSwitchRecording.bind(this, this.state.recordingOn)} active={this.state.recordingOn}>
+                                                            { this.state.recordingOn? 'Stop':'Start' } {isBroadcast? '':'Remote'} Recording
+                                                      </Button>
+                                                      <Button onClick={this._takeSnapshot.bind(this)}>
+                                                            Take Snapshot
+                                                      </Button>
+                                                      {
+                                                            !!isBroadcast &&
+                                                            <Button onClick={this._downloadAllRecordings.bind(this)}>
+                                                                  Download All Recordings
+                                                            </Button>
+                                                      }
+                                                </ButtonToolbar>
+                                          </FormGroup>
+                                          { 
+                                                this.rtc.buffer.recordings.length > 0 && 
+                                                <FormGroup>
+                                                      <ControlLabel>Recorded videos: </ControlLabel>
+                                                      {
+                                                            (()=>this.rtc.buffer.recordings.map(recording=>(
+                                                                  <p key={recording.time}><a onClick={this._downloadRecording.bind(this, recording)}>{recording.time}</a></p>
+                                                            )))()
+                                                      }
+                                                </FormGroup>
+                                          }
                                     </div>
                               </div>
                               <div className='Monitor__video-col col-md-8'>
@@ -176,6 +220,7 @@ class Monitor extends Component {
                                                       { this._renderVideo('Monitor__video') }
                                                 </Rnd>
                                           }
+                                          <canvas ref='canvas' id='canvas'/>
                                     </div>
                                     <div className='row'>
                                           {  (()=>{
@@ -217,7 +262,7 @@ class Monitor extends Component {
                         className={`${className}`}
                         muted={this.props.muted}
                         onVolumeChange={this._onVolumeChange.bind(this)}
-                  />
+                  /> 
             )
       }
 
@@ -241,6 +286,100 @@ class Monitor extends Component {
                         </DropdownButton>
                   </FormGroup>
             );
+      }
+
+      _downloadRecording(recording) {
+            download(URL.createObjectURL(recording.blob), recording.fileName);
+      }
+
+      _downloadAllRecordings() {            
+            if( this.rtc.buffer.recordings.length === 0 ) {
+                  this.props.toast('No recorded videos.', { type:'error', autoClose: 3000 });
+                  return;
+            }
+            
+            c.log('Download single recording');
+            if(this.rtc.buffer.recordings.length === 1) {
+                  let recording = this.rtc.buffer.recordings[0];
+                  download(URL.createObjectURL(recording.blob), recording.fileName);
+                  return;
+            }
+
+            let zip = new JSZip();
+            c.log('Download all recordings as zip');            
+            this.rtc.buffer.recordings.map(recording => {
+                  zip.file(recording.fileName, recording.blob, {base64: true});
+            });
+
+            zip.generateAsync({type:"blob"})
+            .then(function(content) {
+                  // see FileSaver.js
+                  download(URL.createObjectURL(content), "wemon-recordings.zip");
+            });
+      }
+
+      _onSwitchRecording(recordingState) {
+            let recorder;
+
+            if(! this.connection.isInitiator) {
+                  this.connection.extra.action = { type: 'requestRecording', payload: recordingState };
+                  this.connection.updateExtraData();
+                  return;
+            } else {
+                  this.connection.extra.action = { type: 'updateRecording', payload: ! recordingState };
+                  this.connection.updateExtraData();                  
+            }
+
+            if(typeof RecordRTC !== 'function') return this.props.toast('Cannot start/stop recording due to some errors', {type:'error', autoClose:5000});
+
+            if(recordingState && this.rtc.recorder) {
+                  // stop recording
+                  recorder = this.rtc.recorder;
+                  recorder.stopRecording(()=>{
+                        const time = moment().format('YYYY-MM-DD-HH.mm.ss');
+                        const fileName = `wemon-recording_${time}.mp4`;
+                        let blob = recorder.getBlob();
+                        // download( URL.createObjectURL(blob), `wemon-recording_${moment().format('YYYY-MM-DD-HH.mm.ss')}.mp4`);
+                        this.rtc.buffer.recordings.push({ blob, time, fileName });
+                        this.props.toast('Recording stored in the buffer!', { type: 'info', autoClose: 3000 });
+                  });
+
+                  this.setState({ recordingOn: false });
+                  return;
+            };
+
+            // start recording
+            let stream = this.connection.streamEvents[this.connection.latestStreamId].stream;
+
+            if(!stream) logDOMError('No stream found');
+
+            recorder = RecordRTC(stream, {
+                  type: 'video',
+                  recorderType: MediaStreamRecorder
+            });
+
+            recorder.startRecording();
+
+            this.rtc.recorder = recorder;
+
+            this.setState({ recordingOn: true });
+      }
+
+      _onSwitchMotionDetection() {
+
+      }
+
+      _takeSnapshot() {
+            let canvas = this.refs.canvas;
+            let context = canvas.getContext('2d');
+            let video = this.refs.video;
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+
+            var blob = canvas.toDataURL('image/png');
+            download(blob, `wemon-snapshot_${moment().format('YYYY-MM-DD-HH.mm.ss')}.png`);
       }
 
       _onWindowResize(e) {
@@ -440,41 +579,62 @@ class Monitor extends Component {
             c.log('_onExtraDataUpdate', e);
             const isChrome = this.connection.DetectRTC.browser.name === 'Chrome';
 
-            if(!extra) return;
+            if(!extra || _.isEqual(extra, this.lastExtra)) return;
 
-            if(extra.action) {
-                  let action = extra.action;
-                  switch (action.type) {
-                        case 'updateResolution':
-                              if(this.connection.isInitiator) {
-                                    let msg = 'the remote viewer has requested to update resolution';
+            this.lastExtra = extra;
+
+            if(extra.action && !_.isEqual(extra.action, this.lastAction)) {
+                  let action = extra.action, msg = '';
+                  this.lastAction = action;
+
+                  if(this.connection.isInitiator) {
+                        switch (action.type) {
+                              case 'updateResolution':
+                                    msg = 'The remote viewer has requested to update resolution';
                                     c.log(msg);
                                     this.props.toast(msg, { type:'info', autoClose: 3000 });
                                     this._onSelectResolution(action.payload);
-                              };
-                              break;
-                        case 'updateFrameRate':
-                              if(this.connection.isInitiator) {
-                                    let msg = 'the remote viewer has requested to update resolution';
+                                    break;
+                              case 'updateFrameRate':
+                                    msg = 'The remote viewer has requested to update resolution';
                                     c.log(msg);
                                     this.props.toast(msg, { type:'info', autoClose: 3000 });
                                     this._onSelectFrameRate(action.payload.mode, action.payload.eventKey);
-                              };
-                              break;
-                        case 'muteOrUnmute': 
-                              if(this.connection.isInitiator) {
-                                    let msg = 'the remote viewer has requested to mute or unmute stream';
+                                    break;
+                              case 'muteOrUnmute': 
+                                    msg = 'The remote viewer has requested to mute or unmute stream';
                                     c.log(msg);
                                     this.props.toast(msg, { type:'info', autoClose: 3000 });
                                     this._onMuteRemote(action.payload.type, action.payload.currentMuteState);
-                              };
-                              break;
-                        default:
-                              break;
+                                    break;
+                              case 'requestRecording':
+                                    msg = 'The remote viewer has requested to start/stop recording';
+                                    c.log(msg);
+                                    this.props.toast(msg, { type:'info', autoClose: 3000 });
+                                    this._onSwitchRecording(action.payload);
+                                    break;
+                              default:
+                                    break;
+                        }
+                  } else { // forward action
+                        // this.connection.extra.action = action;
+                        // this.connection.updateExtraData();
+                        switch (action.type) {
+                              case 'updateRecording':
+                                    msg = `The broadcaster has ${action.payload? 'started': 'stopped'} recording`;
+                                    c.log(msg);
+                                    this.props.toast(msg, { type:'info', autoClose: 3000 });
+                                    this.setState({ recordingOn: action.payload });
+                                    break;
+                              default:
+                                    break;
+                        }
                   }
             }
 
-            if(extra.muted &&  (!this.connection.isInitiator || this.props.sessionType !== 'broadcast')) {
+            if(extra.muted && (!this.connection.isInitiator || this.props.sessionType !== 'broadcast') && !_.isEqual(extra.muted, this.lastMuted)) {
+                  this.lastMuted = extra.muted;
+
                   let message;
                   if( !_.isEqual(extra.muted.video, this.props.remoteStreamVideoMuted) ) {
                         let remoteStreamVideoMuted;
@@ -491,7 +651,9 @@ class Monitor extends Component {
                   this.props.toast(message, { type: 'info', autoClose: 3000 });
             };
 
-            if(extra.constraints && (!this.connection.isInitiator || this.props.sessionType !== 'broadcast')) {
+            if(extra.constraints && (!this.connection.isInitiator || this.props.sessionType !== 'broadcast') && !_.isEqual(extra.constraints, this.lastConstraints)) {
+                  this.lastConstraints = extra.constraints;
+
                   if( !_.isEqual(extra.constraints, this.props.remoteConstraints)) {
                         c.log('**Extra update remote constraints: ', extra.constraints);
                         const eC = extra.constraints;
@@ -509,20 +671,25 @@ class Monitor extends Component {
                               const newMinFps = isChrome? eC.video.mandatory.minFrameRate : eC.video.frameRate.min;
                               const newMaxFps = isChrome? eC.video.mandatory.maxFrameRate : eC.video.frameRate.max;
       
-                              if(oldWidth !== newWidth || oldHeight !== newHeight) {
-                                    let newRes = _.find(this.props.resolutions, { width: newWidth, height: newHeight });
+                              let newRes = _.find(this.props.resolutions, { width: newWidth, height: newHeight });
+                              let newMin = _.find(this.props.frameRates, { fps: +newMinFps });
+                              let newMax = _.find(this.props.frameRates, { fps: +newMaxFps });                       
+
+                              if( !_.isEqual(newRes, this.lastRes) && (oldWidth !== newWidth || oldHeight !== newHeight)) {
                                     this.props.toast && this.props.toast(`Remote resolution is changed to ${newRes.name} - ${newWidth}x${newHeight} at ${this.props.title}`, {
                                           type: 'info',
                                           autoClose: 4000,
                                     });
+                                    this.props.updateTabConfig({ resolution: newRes }); 
+                                    this.lastRes = newRes;
                               };
-                              if(+oldMinFps !== +newMinFps || +oldMaxFps !== +newMaxFps) {
-                                    let newMin = _.find(this.props.frameRates, { fps: +newMinFps });
-                                    let newMax = _.find(this.props.frameRates, { fps: +newMaxFps });
+                              if( !_.isEqual({ min: newMin, max: newMax }, this.lastFrameRate) && (+oldMinFps !== +newMinFps || +oldMaxFps !== +newMaxFps)) {
                                     this.props.toast && this.props.toast(`Remote frame rate is changed ! Min: ${newMin.fps}, Max: ${newMax.fps} at ${this.props.title}`, {
                                           type: 'info',
                                           autoClose: 4000,
                                     });
+                                    this.props.updateTabConfig({ minFrameRate: newMin, maxFrameRate: newMax }); 
+                                    this.lastFrameRate = { min: newMin, max: newMax };
                               };
                         }
                   };
@@ -531,4 +698,15 @@ class Monitor extends Component {
 }
 
 export default Monitor;
+
+function download(dataurl, filename) {
+      var a = document.createElement("a");
+      a.href = dataurl;
+      a.setAttribute("download", filename);
+      var b = document.createEvent("MouseEvents");
+      b.initEvent("click", false, true);
+      a.dispatchEvent(b);
+
+      return false;
+}
 
