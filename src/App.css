@@ -314,7 +314,10 @@ body {
 .Monitor__restart-icon {
   color: rgb(179, 20, 20);
 }
-z
+
+canvas {
+  display: none;
+}
 
 @keyframes App-logo-spin {
   from { transform: rotate(0deg); }
