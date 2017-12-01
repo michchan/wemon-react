@@ -585,8 +585,9 @@ const filterConstraintsByBrowser = (connection, constraints) => {
     if(supports.deviceId && constraints.deviceId) {
         if(isFirefox) filteredConstraints.video.deviceId = constraints.deviceId;
         else if(isChrome) {
-            filteredConstraints.video.optional.length === 0 && filteredConstraints.video.optional.push({});
-            filteredConstraints.video.optional[0].sourceId = constraints.deviceId;
+            // filteredConstraints.video.optional.length === 0 && filteredConstraints.video.optional.push({});
+            // filteredConstraints.video.optional[0].deviceId = constraints.deviceId;
+            filteredConstraints.video.mandatory.sourceId = constraints.deviceId;
         }
     }
     if(supports.facingMode && constraints.facingMode) {

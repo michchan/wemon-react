@@ -4,7 +4,7 @@ import _ from 'lodash';
 import {CopyToClipboard} from 'react-copy-to-clipboard';
 import { Button, ButtonToolbar, ButtonGroup, FormGroup, ControlLabel, DropdownButton, MenuItem, Form } from 'react-bootstrap';
 import Rnd from 'react-rnd';
-import { setInterval } from 'timers';
+import { setInterval, clearInterval } from 'timers';
 import moment from 'moment';
 
 let c;
@@ -13,6 +13,7 @@ const VIDEO_HEIGHT_FACTOR = 0.4;
 var RecordRTC = window.RecordRTC;
 var MediaStreamRecorder = window.MediaStreamRecorder;
 var JSZip = window.JSZip;
+var MediaStreamTrack = window.MediaStreamTrack;
 
 class Monitor extends Component {
       constructor(props) {
@@ -31,6 +32,8 @@ class Monitor extends Component {
                   trackingOn: false,
                   recordingOn: false,
                   motionDetectOn: false,
+                  cameras: [],
+                  camera: null,
             }; // state will lose after tab switched
 
             c.log('List of available resolutions: ', props.resolutions);
@@ -42,6 +45,19 @@ class Monitor extends Component {
             this.lastMuted = null;
             this.lastRes = null;
             this.lastFrameRate = null;
+      }
+
+      componentWillMount() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+                  console.error("enumerateDevices() not supported.");
+                  return;
+            }
+
+            navigator.mediaDevices.enumerateDevices()
+            .then(this._getCameras.bind(this))
+            .catch(function(err) {
+                  console.error(err.name + ": " + err.message);
+            });
       }
 
       componentDidMount() {   
@@ -130,14 +146,40 @@ class Monitor extends Component {
                                           }
                                     </div>
                                     <div className='Monitor__config-container'>
+                                          {
+                                                (isBroadcast && this.state.camera) && 
+                                                <FormGroup>
+                                                      <ControlLabel>Select Camera: &nbsp;</ControlLabel>
+                                                      <DropdownButton bsStyle={'default'} id={'cameras'} 
+                                                            title={`${this.state.camera.text}`} 
+                                                            onSelect={this._onSelectCamera.bind(this)}
+                                                      >
+                                                            {(()=> this.state.cameras.map((camera, index) => (
+                                                                  <MenuItem eventKey={camera.value} key={index}>
+                                                                        { camera.text }
+                                                                  </MenuItem>
+                                                            )))()}
+                                                      </DropdownButton>
+                                                </FormGroup>
+                                          }
                                           <FormGroup>
                                                 <ButtonToolbar>
+                                                      {     
+                                                            ! isBroadcast &&
+                                                            <Button onClick={this._onRefreshRemote.bind(this)}>
+                                                                  Refresh Remote Connection &nbsp;<i className="fa fa-refresh fa-2x Monitor__refresh-icon"></i>
+                                                            </Button>
+                                                      }     
                                                       {<Button onClick={this._onRefresh.bind(this)}>
                                                             { isBroadcast? 'Refresh':'Re-join' } Connection &nbsp;<i className="fa fa-refresh fa-2x Monitor__refresh-icon"></i>
-                                                      </Button>}
-                                                      {<Button onClick={this._onRestart.bind(this)}>
-                                                            { isBroadcast? 'Restart':'Restart New Viewing' } Session &nbsp;<i className="fa fa-circle-o-notch fa-2x Monitor__restart-icon"></i>
-                                                      </Button>}
+                                                      </Button>
+                                                      }
+                                                      {
+                                                            isBroadcast && 
+                                                            <Button onClick={this._onRestart.bind(this)}>
+                                                                  Restart Session &nbsp;<i className="fa fa-circle-o-notch fa-2x Monitor__restart-icon"></i>
+                                                            </Button>
+                                                      }
                                                 </ButtonToolbar>
                                           </FormGroup>
                                           {
@@ -288,6 +330,23 @@ class Monitor extends Component {
             );
       }
 
+      _getCameras(devices) {
+            devices.forEach((device) => {
+                  console.log(device.kind + ": " + device.label + " id = " + device.deviceId);
+
+                  let option = {}, cameras = [ ...this.state.cameras ];
+                  if (device.kind === 'videoinput') {
+                        option.value = device.deviceId;                        
+                        option.text = device.label || 'camera ' + (this.state.cameras.length + 1);
+
+                        cameras.push(option);
+                        this.setState({ cameras });
+                  }
+            });
+            
+            this.setState({ camera: this.state.cameras[0] });
+      }
+
       _downloadRecording(recording) {
             download(URL.createObjectURL(recording.blob), recording.fileName);
       }
@@ -394,8 +453,13 @@ class Monitor extends Component {
 
             this.forceUpdate();
       }
+
+      _onRefreshRemote() {
+            this.connection.extra.action = { type: 'requestRefresh', payload: {} };
+            this.connection.updateExtraData();
+      }
       
-      _onRefresh() {
+      _onRefresh(stop = true) {
             this.refs.video.pause();
             const errCallback = (err)=>this.props.toast && this.props.toast('Error: cannot refresh Connection', {
                   type: 'error',
@@ -410,6 +474,18 @@ class Monitor extends Component {
             c.log('Refresh as a broadcaster');
             this.rtc.userEventHandlers.refreshConnection(errCallback);
             this.props.updateTabConfig({ muteStreamVideo: false, muteStreamAudio: false });
+
+            if(!stop) {
+                  let count = 0;
+                  let int = setInterval(()=>{ 
+                        if(count===2) {
+                              clearInterval(int);
+                              return this._onRefresh();
+                        }
+                        this._onRefresh();
+                        count++;
+                  }, 1000);
+            }
       }
 
       _onRestart() {
@@ -497,6 +573,23 @@ class Monitor extends Component {
                   type: 'info',
                   autoClose: 3000
             });
+      }
+
+      _onSelectCamera(cameraId, e) {
+            // if(this.state.camera.value !== cameraId) {
+                  let camera = _.find(this.state.cameras, { value: cameraId });
+                  this.setState({ camera });
+
+                  if(! this.connection.isInitiator || this.props.sessionType === 'view') return;
+
+                  this.rtc.userEventHandlers.applyConstraints(
+                        { deviceId: cameraId }, 
+                        ()=>this.props.toast && this.props.toast('Error: Cannot update Camera or this camera is not supported.', {
+                              type: 'error',
+                              autoClose: 5000
+                        })
+                  );
+            // }
       }
 
       _onSelectResolution(eventKey, e) {
@@ -589,6 +682,12 @@ class Monitor extends Component {
 
                   if(this.connection.isInitiator) {
                         switch (action.type) {
+                              case 'requestRefresh':
+                                    msg = 'The remote viewer has requested to refresh stream';
+                                    c.log(msg);
+                                    this.props.toast(msg, { type:'info', autoClose: 3000 });
+                                    this._onRefresh(false);
+                                    break;
                               case 'updateResolution':
                                     msg = 'The remote viewer has requested to update resolution';
                                     c.log(msg);
